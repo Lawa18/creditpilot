@@ -8,6 +8,8 @@ import { SkeletonCard } from "@/components/SkeletonCard";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useNavigate } from "react-router-dom";
+import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -35,6 +37,18 @@ export default function ActivityFeed() {
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const { data: pendingCount } = useQuery({
+    queryKey: ["pending-actions-count"],
+    queryFn: async () => {
+      const { count } = await supabase
+        .from("pending_actions")
+        .select("*", { count: "exact", head: true })
+        .eq("status", "pending");
+      return count ?? 0;
+    },
+  });
 
   const { data: agentStats, isLoading: statsLoading } = useQuery({
     queryKey: ["agent-stats"],
@@ -109,6 +123,19 @@ export default function ActivityFeed() {
   return (
     <div className="space-y-6">
       <h1 className="text-xl font-semibold text-foreground">Activity Feed</h1>
+
+      {/* Pending Actions Banner */}
+      {pendingCount != null && pendingCount > 0 && (
+        <div className="flex items-center gap-3 bg-agent-aging/10 border border-agent-aging/30 rounded-xl px-4 py-3">
+          <AlertTriangle className="h-4 w-4 text-agent-aging shrink-0" />
+          <span className="text-sm text-foreground flex-1">
+            <span className="font-semibold">{pendingCount}</span> agent action{pendingCount !== 1 ? "s" : ""} require your approval
+          </span>
+          <Button size="sm" variant="outline" className="h-7 text-xs border-agent-aging/30 text-agent-aging hover:bg-agent-aging/10" onClick={() => navigate("/demo")}>
+            Review Pending Actions →
+          </Button>
+        </div>
+      )}
 
       {/* Agent Status Cards */}
       <div className="grid grid-cols-3 gap-4">

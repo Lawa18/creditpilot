@@ -14,6 +14,123 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_messages: {
+        Row: {
+          agent_name: string
+          body: string | null
+          channel: string
+          created_at: string
+          customer_id: string | null
+          delivered_via: string | null
+          id: string
+          invoice_ids: string[] | null
+          metadata: Json | null
+          recipient_email: string | null
+          recipient_name: string | null
+          recipient_type: string | null
+          run_id: string
+          status: string | null
+          subject: string | null
+          template_type: string | null
+        }
+        Insert: {
+          agent_name: string
+          body?: string | null
+          channel?: string
+          created_at?: string
+          customer_id?: string | null
+          delivered_via?: string | null
+          id?: string
+          invoice_ids?: string[] | null
+          metadata?: Json | null
+          recipient_email?: string | null
+          recipient_name?: string | null
+          recipient_type?: string | null
+          run_id: string
+          status?: string | null
+          subject?: string | null
+          template_type?: string | null
+        }
+        Update: {
+          agent_name?: string
+          body?: string | null
+          channel?: string
+          created_at?: string
+          customer_id?: string | null
+          delivered_via?: string | null
+          id?: string
+          invoice_ids?: string[] | null
+          metadata?: Json | null
+          recipient_email?: string | null
+          recipient_name?: string | null
+          recipient_type?: string | null
+          run_id?: string
+          status?: string | null
+          subject?: string | null
+          template_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_messages_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_messages_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customers_at_risk"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_runs: {
+        Row: {
+          actions_taken: number | null
+          agent_name: string
+          completed_at: string | null
+          conditions_found: number | null
+          customers_scanned: number | null
+          id: string
+          messages_composed: number | null
+          run_id: string
+          started_at: string
+          status: string
+          summary: string | null
+          triggered_by: string | null
+        }
+        Insert: {
+          actions_taken?: number | null
+          agent_name: string
+          completed_at?: string | null
+          conditions_found?: number | null
+          customers_scanned?: number | null
+          id?: string
+          messages_composed?: number | null
+          run_id: string
+          started_at?: string
+          status?: string
+          summary?: string | null
+          triggered_by?: string | null
+        }
+        Update: {
+          actions_taken?: number | null
+          agent_name?: string
+          completed_at?: string | null
+          conditions_found?: number | null
+          customers_scanned?: number | null
+          id?: string
+          messages_composed?: number | null
+          run_id?: string
+          started_at?: string
+          status?: string
+          summary?: string | null
+          triggered_by?: string | null
+        }
+        Relationships: []
+      }
       ar_aging_snapshots: {
         Row: {
           as_of_date: string
@@ -581,6 +698,82 @@ export type Database = {
             columns: ["invoice_id"]
             isOneToOne: false
             referencedRelation: "v_overdue_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pending_actions: {
+        Row: {
+          action_type: string
+          agent_name: string
+          created_at: string
+          current_value: number | null
+          customer_id: string | null
+          expires_at: string | null
+          id: string
+          message_id: string | null
+          proposed_value: number | null
+          rationale: string | null
+          review_note: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          run_id: string
+          status: string
+        }
+        Insert: {
+          action_type: string
+          agent_name: string
+          created_at?: string
+          current_value?: number | null
+          customer_id?: string | null
+          expires_at?: string | null
+          id?: string
+          message_id?: string | null
+          proposed_value?: number | null
+          rationale?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          run_id: string
+          status?: string
+        }
+        Update: {
+          action_type?: string
+          agent_name?: string
+          created_at?: string
+          current_value?: number | null
+          customer_id?: string | null
+          expires_at?: string | null
+          id?: string
+          message_id?: string | null
+          proposed_value?: number | null
+          rationale?: string | null
+          review_note?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          run_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pending_actions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_actions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customers_at_risk"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pending_actions_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "agent_messages"
             referencedColumns: ["id"]
           },
         ]
