@@ -43,6 +43,24 @@ export function AppSidebar() {
       </div>
 
       <nav className="flex-1 p-3 space-y-0.5">
+        <NavLink
+          to={demoItem.path}
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
+              isActive
+                ? "bg-sidebar-accent text-sidebar-foreground font-medium"
+                : "text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
+            )
+          }
+        >
+          <demoItem.icon className="h-4 w-4 shrink-0" />
+          <span className="flex-1">⚡ {demoItem.title}</span>
+          <span className="w-2 h-2 rounded-full bg-risk-current animate-pulse" />
+        </NavLink>
+
+        <div className="my-2 border-t border-sidebar-border" />
+
         {navItems.map((item) => (
           <NavLink
             key={item.path}
@@ -68,23 +86,8 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-sidebar-border space-y-1">
-        <NavLink
-          to={demoItem.path}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-              isActive
-                ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                : "text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-            )
-          }
-        >
-          <demoItem.icon className="h-4 w-4 shrink-0" />
-          <span className="flex-1">⚡ {demoItem.title}</span>
-          <span className="w-2 h-2 rounded-full bg-risk-current animate-pulse" />
-        </NavLink>
-        <p className="text-sidebar-muted text-xs px-3 pt-2">{company?.name ?? "Loading..."}</p>
+      <div className="p-3 border-t border-sidebar-border">
+        <p className="text-sidebar-muted text-xs px-3">{company?.name ?? "Loading..."}</p>
       </div>
     </aside>
   );
