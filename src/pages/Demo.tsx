@@ -6,13 +6,24 @@ import { formatCurrency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { Clock, Play, Loader2, CheckCircle2, XCircle, AlertTriangle, Mail, MessageSquare, ArrowLeft } from "lucide-react";
+import { Clock, Play, Loader2, CheckCircle2, XCircle, AlertTriangle, Mail, MessageSquare, ArrowLeft, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { AgentPill } from "@/components/AgentPill";
 import { Link } from "react-router-dom";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type LogEntry = {
   id: string;
@@ -259,6 +270,36 @@ export default function Demo() {
     },
   });
 
+  const [resetting, setResetting] = useState(false);
+
+  const resetDemo = async () => {
+    setResetting(true);
+    try {
+      await supabase.from('pending_actions').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('agent_messages').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('agent_runs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('credit_actions').delete().eq('agent_name', 'ar_aging_agent');
+      await supabase.from('credit_actions').delete().eq('agent_name', 'news_monitor_agent');
+      await supabase.from('negative_news').update({ reviewed: false, reviewed_by: null, reviewed_at: null }).neq('id', '00000000-0000-0000-0000-000000000000');
+
+      setLogEntries([]);
+      setLatestRunId(null);
+      setRunningAgents(new Set());
+      queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["latest-run"] });
+      queryClient.invalidateQueries({ queryKey: ["demo-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["demo-pending"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
+
+      toast.success("Demo reset — ready for a fresh run");
+    } catch {
+      toast.error("Failed to reset demo");
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const anyRunning = runningAgents.size > 0;
 
   const logIcon = (type: LogEntry["icon"]) => {
@@ -289,7 +330,36 @@ export default function Demo() {
           </Link>
           <h1 className="font-semibold">Credit Agent Observer — Live Demo</h1>
         </div>
-        <p className="text-sm text-sidebar-muted">Global Trading Solutions Inc · 49 customers · $103M portfolio</p>
+        <div className="flex items-center gap-4">
+          <p className="text-sm text-sidebar-muted">Global Trading Solutions Inc · 49 customers · $103M portfolio</p>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="border-white/30 text-white bg-transparent hover:bg-white/10 hover:text-white text-sm gap-1.5">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset Demo
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset the demo?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will clear all agent runs, messages, and pending actions. This cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={resetDemo}
+                  disabled={resetting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
       </header>
 
       {/* 3-column layout */}
