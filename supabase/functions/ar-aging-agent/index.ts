@@ -28,7 +28,10 @@ Deno.serve(async (req) => {
   });
 
   try {
-    // 2. Get customers with AR aging data
+    // 2. Clean up previous pending actions for this agent
+    await supabase.from("pending_actions").delete().eq("agent_name", agent_name).eq("status", "pending");
+
+    // 3. Get customers with AR aging data
     const { data: customers } = await supabase
       .from("v_ar_aging_current")
       .select("*")
