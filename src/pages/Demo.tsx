@@ -423,24 +423,30 @@ export default function Demo() {
                     <p className="font-semibold text-sm text-foreground">{agent.label}</p>
                     <p className="text-[10px] font-mono text-muted-foreground">{agent.name}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Last run: {minutesAgo != null ? `${minutesAgo}m ago` : "Never"}
-                  </p>
-                  {lastRun && lastRun.status === "completed" && (
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <p className="text-lg font-bold text-foreground">{lastRun.customers_scanned ?? 0}</p>
-                        <p className="text-[10px] text-muted-foreground">Scanned</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-foreground">{lastRun.conditions_found ?? 0}</p>
-                        <p className="text-[10px] text-muted-foreground">Found</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-foreground">{lastRun.messages_composed ?? 0}</p>
-                        <p className="text-[10px] text-muted-foreground">Messages</p>
-                      </div>
-                    </div>
+                  {sessionActivated ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Last run: {minutesAgo != null ? `${minutesAgo}m ago` : "Never"}
+                      </p>
+                      {lastRun && lastRun.status === "completed" && (
+                        <div className={cn("grid grid-cols-3 gap-2 text-center transition-all duration-700", revealCached ? "animate-in fade-in slide-in-from-bottom-2" : "")}>
+                          <div>
+                            <p className="text-lg font-bold text-foreground">{lastRun.customers_scanned ?? 0}</p>
+                            <p className="text-[10px] text-muted-foreground">Scanned</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-foreground">{lastRun.conditions_found ?? 0}</p>
+                            <p className="text-[10px] text-muted-foreground">Found</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-foreground">{lastRun.messages_composed ?? 0}</p>
+                            <p className="text-[10px] text-muted-foreground">Messages</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Click Run Agent to start</p>
                   )}
                   <Button
                     className="w-full text-xs"
