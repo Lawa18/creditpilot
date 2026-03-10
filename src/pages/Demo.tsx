@@ -323,6 +323,9 @@ export default function Demo() {
       setLogEntries([]);
       setLatestRunId(null);
       setRunningAgents(new Set());
+      setRevealCached(false);
+      sessionStorage.removeItem("demo_activated");
+      setSessionActivated(false);
       queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       queryClient.invalidateQueries({ queryKey: ["latest-run"] });
       queryClient.invalidateQueries({ queryKey: ["demo-messages"] });
