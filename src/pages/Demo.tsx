@@ -50,6 +50,17 @@ export default function Demo() {
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
 
+  // Per-visitor fresh state: hide previous results until this visitor triggers a run
+  const [sessionActivated, setSessionActivated] = useState(() => {
+    return sessionStorage.getItem("demo_activated") === "true";
+  });
+  const [revealCached, setRevealCached] = useState(false);
+
+  const activateSession = useCallback(() => {
+    sessionStorage.setItem("demo_activated", "true");
+    setSessionActivated(true);
+  }, []);
+
   const addLog = useCallback((entry: Omit<LogEntry, "id">) => {
     setLogEntries((prev) => [...prev, { ...entry, id: crypto.randomUUID() }]);
   }, []);
