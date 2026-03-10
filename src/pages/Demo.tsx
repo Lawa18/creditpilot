@@ -167,7 +167,7 @@ export default function Demo() {
       });
     });
     setLogEntries(initialLogs.sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
-  }, [latestRunId, messages, pendingActions, latestRun]);
+  }, [sessionActivated, latestRunId, messages, pendingActions, latestRun]);
 
   // Realtime subscription
   useEffect(() => {
