@@ -6,6 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const RATE_LIMIT_MINUTES = 60;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -15,8 +17,30 @@ Deno.serve(async (req) => {
   );
 
   const { triggered_by } = await req.json().catch(() => ({ triggered_by: "manual" }));
-  const run_id = crypto.randomUUID();
   const agent_name = "ar_aging_agent";
+
+  // --- Rate limit check ---
+  const cutoff = new Date(Date.now() - RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
+  const { data: recentRuns } = await supabase
+    .from("agent_runs")
+    .select("run_id, started_at, status")
+    .eq("agent_name", agent_name)
+    .gte("started_at", cutoff)
+    .in("status", ["completed", "running"])
+    .limit(1);
+
+  if (recentRuns && recentRuns.length > 0) {
+    return new Response(JSON.stringify({
+      error: "rate_limited",
+      message: `This agent was run recently. Please wait before running again.`,
+      last_run_at: recentRuns[0].started_at,
+    }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const run_id = crypto.randomUUID();
 
   // 1. Insert running run
   await supabase.from("agent_runs").insert({
@@ -52,7 +76,6 @@ Deno.serve(async (req) => {
     for (const cust of atRisk.slice(0, 5)) {
       const totalOverdue = (cust.days_31_60 ?? 0) + (cust.days_61_90 ?? 0) + (cust.days_over_90 ?? 0);
 
-      // Compose email
       await supabase.from("agent_messages").insert({
         run_id,
         agent_name,
@@ -68,7 +91,6 @@ Deno.serve(async (req) => {
       });
       messagesComposed++;
 
-      // Internal Teams alert for critical cases
       if ((cust.days_over_90 ?? 0) > 100000) {
         await supabase.from("agent_messages").insert({
           run_id,
@@ -85,7 +107,6 @@ Deno.serve(async (req) => {
         messagesComposed++;
       }
 
-      // Create pending action for credit limit reduction on worst cases
       if ((cust.utilization_pct ?? 0) > 70 && (cust.days_over_90 ?? 0) > 50000) {
         const proposedLimit = Math.round((cust.credit_limit ?? 0) * 0.6);
         await supabase.from("pending_actions").insert({
@@ -102,7 +123,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 5. Mark run completed
     await supabase.from("agent_runs").update({
       status: "completed",
       completed_at: new Date().toISOString(),

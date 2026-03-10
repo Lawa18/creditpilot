@@ -837,6 +837,8 @@ export type Database = {
       }
       sec_monitoring: {
         Row: {
+          ai_risk_score: number | null
+          ai_summary: string | null
           alert_triggered: boolean | null
           cik: string | null
           created_at: string
@@ -847,6 +849,8 @@ export type Database = {
           risk_signals: string[] | null
         }
         Insert: {
+          ai_risk_score?: number | null
+          ai_summary?: string | null
           alert_triggered?: boolean | null
           cik?: string | null
           created_at?: string
@@ -857,6 +861,8 @@ export type Database = {
           risk_signals?: string[] | null
         }
         Update: {
+          ai_risk_score?: number | null
+          ai_summary?: string | null
           alert_triggered?: boolean | null
           cik?: string | null
           created_at?: string
@@ -1025,6 +1031,8 @@ export type Database = {
       }
       v_sec_monitoring_dashboard: {
         Row: {
+          ai_risk_score: number | null
+          ai_summary: string | null
           alert_triggered: boolean | null
           cik: string | null
           company_name: string | null
