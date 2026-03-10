@@ -218,19 +218,35 @@ export default function Demo() {
 
   // Run agent
   const runAgent = async (agent: typeof AGENTS[number]) => {
+    activateSession();
     setRunningAgents((prev) => new Set(prev).add(agent.name));
     try {
       const { data, error } = await supabase.functions.invoke(agent.fnName, {
         body: { triggered_by: "demo_page" },
       });
       if (error) {
-        // Check if the error response contains rate limit info
         const errBody = typeof error === "object" && error !== null ? error : {};
         const message = (errBody as any)?.message || (errBody as any)?.context?.message;
         if (message?.includes("rate_limit") || message?.includes("recently")) {
-          toast.info("This agent was run recently. Showing cached results.", { duration: 5000 });
+          toast.info("This agent was run recently. Loading cached results.", { duration: 5000 });
+          // Reveal cached results with animation
+          setRevealCached(true);
+          // Refresh queries to load the existing cached data
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
+            queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
+          ]);
         } else if (message?.includes("token_cap") || message?.includes("budget")) {
-          toast.info("AI analysis budget reached. Cached results are still available.", { duration: 5000 });
+          toast.info("AI analysis budget reached. Loading cached results.", { duration: 5000 });
+          setRevealCached(true);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
+            queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
+          ]);
         } else {
           toast.error(`Failed to invoke ${agent.label}`);
         }
