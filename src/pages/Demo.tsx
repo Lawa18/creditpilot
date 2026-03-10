@@ -289,7 +289,9 @@ export default function Demo() {
       await supabase.from('agent_runs').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('credit_actions').delete().eq('agent_name', 'ar_aging_agent');
       await supabase.from('credit_actions').delete().eq('agent_name', 'news_monitor_agent');
+      await supabase.from('credit_actions').delete().eq('agent_name', 'sec_monitor_agent');
       await supabase.from('negative_news').update({ reviewed: false, reviewed_by: null, reviewed_at: null }).neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('sec_filings').update({ reviewed: false, reviewed_by: null, reviewed_at: null }).neq('id', '00000000-0000-0000-0000-000000000000');
 
       setLogEntries([]);
       setLatestRunId(null);
