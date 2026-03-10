@@ -6,6 +6,8 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
+const RATE_LIMIT_MINUTES = 60;
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -15,8 +17,30 @@ Deno.serve(async (req) => {
   );
 
   const { triggered_by } = await req.json().catch(() => ({ triggered_by: "manual" }));
-  const run_id = crypto.randomUUID();
   const agent_name = "news_monitor_agent";
+
+  // --- Rate limit check ---
+  const cutoff = new Date(Date.now() - RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
+  const { data: recentRuns } = await supabase
+    .from("agent_runs")
+    .select("run_id, started_at, status")
+    .eq("agent_name", agent_name)
+    .gte("started_at", cutoff)
+    .in("status", ["completed", "running"])
+    .limit(1);
+
+  if (recentRuns && recentRuns.length > 0) {
+    return new Response(JSON.stringify({
+      error: "rate_limited",
+      message: `This agent was run recently. Please wait before running again.`,
+      last_run_at: recentRuns[0].started_at,
+    }), {
+      status: 429,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const run_id = crypto.randomUUID();
 
   await supabase.from("agent_runs").insert({
     run_id,
@@ -27,7 +51,6 @@ Deno.serve(async (req) => {
   });
 
   try {
-    // Get unreviewed negative news
     const { data: news } = await supabase
       .from("negative_news")
       .select("*, customers(company_name, ticker)")
@@ -39,7 +62,6 @@ Deno.serve(async (req) => {
     const conditionsFound = critical.length;
     let messagesComposed = 0;
 
-    // Compose alert messages for critical/high severity items (max 5)
     for (const item of critical.slice(0, 5)) {
       const cust = (item as any).customers;
       await supabase.from("agent_messages").insert({
