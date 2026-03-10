@@ -209,11 +209,20 @@ export default function Demo() {
   const runAgent = async (agent: typeof AGENTS[number]) => {
     setRunningAgents((prev) => new Set(prev).add(agent.name));
     try {
-      const { error } = await supabase.functions.invoke(agent.fnName, {
+      const { data, error } = await supabase.functions.invoke(agent.fnName, {
         body: { triggered_by: "demo_page" },
       });
       if (error) {
-        toast.error(`Failed to invoke ${agent.label}`);
+        // Check if the error response contains rate limit info
+        const errBody = typeof error === "object" && error !== null ? error : {};
+        const message = (errBody as any)?.message || (errBody as any)?.context?.message;
+        if (message?.includes("rate_limit") || message?.includes("recently")) {
+          toast.info("This agent was run recently. Showing cached results.", { duration: 5000 });
+        } else if (message?.includes("token_cap") || message?.includes("budget")) {
+          toast.info("AI analysis budget reached. Cached results are still available.", { duration: 5000 });
+        } else {
+          toast.error(`Failed to invoke ${agent.label}`);
+        }
         setRunningAgents((prev) => { const s = new Set(prev); s.delete(agent.name); return s; });
       }
     } catch {
