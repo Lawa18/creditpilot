@@ -50,6 +50,17 @@ export default function Demo() {
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const logRef = useRef<HTMLDivElement>(null);
 
+  // Per-visitor fresh state: hide previous results until this visitor triggers a run
+  const [sessionActivated, setSessionActivated] = useState(() => {
+    return sessionStorage.getItem("demo_activated") === "true";
+  });
+  const [revealCached, setRevealCached] = useState(false);
+
+  const activateSession = useCallback(() => {
+    sessionStorage.setItem("demo_activated", "true");
+    setSessionActivated(true);
+  }, []);
+
   const addLog = useCallback((entry: Omit<LogEntry, "id">) => {
     setLogEntries((prev) => [...prev, { ...entry, id: crypto.randomUUID() }]);
   }, []);
@@ -122,7 +133,7 @@ export default function Demo() {
 
   // Load initial log entries from latest run
   useEffect(() => {
-    if (!latestRunId || !messages) return;
+    if (!sessionActivated || !latestRunId || !messages) return;
     const initialLogs: LogEntry[] = [];
     if (latestRun) {
       initialLogs.push({
@@ -156,7 +167,7 @@ export default function Demo() {
       });
     });
     setLogEntries(initialLogs.sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
-  }, [latestRunId, messages, pendingActions, latestRun]);
+  }, [sessionActivated, latestRunId, messages, pendingActions, latestRun]);
 
   // Realtime subscription
   useEffect(() => {
@@ -207,19 +218,35 @@ export default function Demo() {
 
   // Run agent
   const runAgent = async (agent: typeof AGENTS[number]) => {
+    activateSession();
     setRunningAgents((prev) => new Set(prev).add(agent.name));
     try {
       const { data, error } = await supabase.functions.invoke(agent.fnName, {
         body: { triggered_by: "demo_page" },
       });
       if (error) {
-        // Check if the error response contains rate limit info
         const errBody = typeof error === "object" && error !== null ? error : {};
         const message = (errBody as any)?.message || (errBody as any)?.context?.message;
         if (message?.includes("rate_limit") || message?.includes("recently")) {
-          toast.info("This agent was run recently. Showing cached results.", { duration: 5000 });
+          toast.info("This agent was run recently. Loading cached results.", { duration: 5000 });
+          // Reveal cached results with animation
+          setRevealCached(true);
+          // Refresh queries to load the existing cached data
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
+            queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
+          ]);
         } else if (message?.includes("token_cap") || message?.includes("budget")) {
-          toast.info("AI analysis budget reached. Cached results are still available.", { duration: 5000 });
+          toast.info("AI analysis budget reached. Loading cached results.", { duration: 5000 });
+          setRevealCached(true);
+          await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
+            queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
+          ]);
         } else {
           toast.error(`Failed to invoke ${agent.label}`);
         }
@@ -296,6 +323,9 @@ export default function Demo() {
       setLogEntries([]);
       setLatestRunId(null);
       setRunningAgents(new Set());
+      setRevealCached(false);
+      sessionStorage.removeItem("demo_activated");
+      setSessionActivated(false);
       queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       queryClient.invalidateQueries({ queryKey: ["latest-run"] });
       queryClient.invalidateQueries({ queryKey: ["demo-messages"] });
@@ -393,24 +423,30 @@ export default function Demo() {
                     <p className="font-semibold text-sm text-foreground">{agent.label}</p>
                     <p className="text-[10px] font-mono text-muted-foreground">{agent.name}</p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Last run: {minutesAgo != null ? `${minutesAgo}m ago` : "Never"}
-                  </p>
-                  {lastRun && lastRun.status === "completed" && (
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div>
-                        <p className="text-lg font-bold text-foreground">{lastRun.customers_scanned ?? 0}</p>
-                        <p className="text-[10px] text-muted-foreground">Scanned</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-foreground">{lastRun.conditions_found ?? 0}</p>
-                        <p className="text-[10px] text-muted-foreground">Found</p>
-                      </div>
-                      <div>
-                        <p className="text-lg font-bold text-foreground">{lastRun.messages_composed ?? 0}</p>
-                        <p className="text-[10px] text-muted-foreground">Messages</p>
-                      </div>
-                    </div>
+                  {sessionActivated ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Last run: {minutesAgo != null ? `${minutesAgo}m ago` : "Never"}
+                      </p>
+                      {lastRun && lastRun.status === "completed" && (
+                        <div className={cn("grid grid-cols-3 gap-2 text-center transition-all duration-700", revealCached ? "animate-in fade-in slide-in-from-bottom-2" : "")}>
+                          <div>
+                            <p className="text-lg font-bold text-foreground">{lastRun.customers_scanned ?? 0}</p>
+                            <p className="text-[10px] text-muted-foreground">Scanned</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-foreground">{lastRun.conditions_found ?? 0}</p>
+                            <p className="text-[10px] text-muted-foreground">Found</p>
+                          </div>
+                          <div>
+                            <p className="text-lg font-bold text-foreground">{lastRun.messages_composed ?? 0}</p>
+                            <p className="text-[10px] text-muted-foreground">Messages</p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Click Run Agent to start</p>
                   )}
                   <Button
                     className="w-full text-xs"
@@ -474,8 +510,8 @@ export default function Demo() {
             </div>
 
             <TabsContent value="messages" className="flex-1 overflow-auto max-h-[560px] p-4 space-y-3 mt-0">
-              {!messages || messages.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No messages from this run yet.</p>
+              {!sessionActivated || !messages || messages.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">{sessionActivated ? "No messages from this run yet." : "Run an agent to see composed messages."}</p>
               ) : (
                 (messages as any[]).map((msg) => {
                   const isExpanded = expandedMessages.has(msg.id);
@@ -529,8 +565,8 @@ export default function Demo() {
             </TabsContent>
 
             <TabsContent value="pending" className="flex-1 overflow-auto max-h-[560px] p-4 space-y-3 mt-0">
-              {!pendingActions || pendingActions.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No pending actions.</p>
+              {!sessionActivated || !pendingActions || pendingActions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">{sessionActivated ? "No pending actions." : "Run an agent to see pending actions."}</p>
               ) : (
                 (pendingActions as any[]).map((action) => {
                   const cust = (action as any).customers;
