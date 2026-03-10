@@ -133,7 +133,7 @@ export default function Demo() {
 
   // Load initial log entries from latest run
   useEffect(() => {
-    if (!latestRunId || !messages) return;
+    if (!sessionActivated || !latestRunId || !messages) return;
     const initialLogs: LogEntry[] = [];
     if (latestRun) {
       initialLogs.push({
