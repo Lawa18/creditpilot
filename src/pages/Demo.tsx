@@ -463,6 +463,9 @@ export default function Demo() {
         </div>
       </div>
       <div className="max-w-[1400px] mx-auto px-6 pb-6 pt-4 grid grid-cols-[280px_1fr_380px] gap-6">
+        {/* LEFT — Agent Controls */}
+        <div className="space-y-4">
+          {AGENTS.map((agent) => {
             const config = getAgentConfig(agent.name);
             const lastRun = agentLastRuns?.[agent.name];
             const minutesAgo = lastRun?.started_at
