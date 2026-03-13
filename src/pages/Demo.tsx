@@ -201,6 +201,7 @@ export default function Demo() {
         if (!row) return;
         queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
         queryClient.invalidateQueries({ queryKey: ["latest-run"] });
+        queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] });
         if (row.run_id) setLatestRunId(row.run_id);
         if (row.status === "running") {
           setRunningAgents((prev) => new Set(prev).add(row.agent_name));
