@@ -527,14 +527,14 @@ export default function Demo() {
             <h2 className="text-sm font-semibold text-foreground">Live Execution Log</h2>
           </div>
           <div ref={logRef} className="flex-1 overflow-auto max-h-[600px] p-4 space-y-2">
-            {logEntries.length === 0 ? (
+            {filteredLogEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Clock className="h-8 w-8 mb-3 opacity-50" />
                 <p className="text-sm">No agent runs yet.</p>
                 <p className="text-xs">Click Run Agent to see the agents work in real time.</p>
               </div>
             ) : (
-              logEntries.map((entry) => (
+              filteredLogEntries.map((entry) => (
                 <div key={entry.id} className="flex items-start gap-2 text-xs">
                   <span className="font-mono text-muted-foreground whitespace-nowrap w-16 shrink-0">
                     {format(new Date(entry.timestamp), "HH:mm:ss")}
