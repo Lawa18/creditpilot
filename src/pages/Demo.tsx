@@ -137,43 +137,60 @@ export default function Demo() {
   );
   const pendingCount = filteredPending.filter((a: any) => a.status === "pending").length;
 
-  // Load initial log entries from latest run
+  // Fetch all runs for log
+  const { data: allRuns } = useQuery({
+    queryKey: ["all-agent-runs"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("agent_runs")
+        .select("*")
+        .order("started_at", { ascending: true });
+      return data ?? [];
+    },
+  });
+
+  // Load initial log entries from all runs
   useEffect(() => {
-    if (!latestRunId || !messages) return;
+    if (!allRuns) return;
     const initialLogs: LogEntry[] = [];
-    if (latestRun) {
+    (allRuns as any[]).forEach((run) => {
       initialLogs.push({
-        id: `run-start-${latestRun.id}`,
-        timestamp: latestRun.started_at,
-        icon: latestRun.status === "running" ? "start" : latestRun.status === "completed" ? "complete" : "fail",
-        text: latestRun.status === "running"
-          ? `${getAgentConfig(latestRun.agent_name).label} started — scanning portfolio`
-          : latestRun.status === "completed"
-          ? `Run complete — ${latestRun.summary ?? "done"}`
+        id: `run-start-${run.id}`,
+        timestamp: run.started_at,
+        icon: run.status === "running" ? "start" : run.status === "completed" ? "complete" : "fail",
+        text: run.status === "running"
+          ? `${getAgentConfig(run.agent_name).label} started — scanning portfolio`
+          : run.status === "completed"
+          ? `Run complete — ${run.summary ?? "done"}`
           : `Run failed`,
-        agentName: latestRun.agent_name,
+        agentName: run.agent_name,
       });
-    }
-    (messages as any[]).forEach((m) => {
+    });
+    (allMessages ?? []).forEach((m: any) => {
       initialLogs.push({
         id: `msg-${m.id}`,
         timestamp: m.created_at,
         icon: "message",
-        text: `Composed ${m.template_type ?? m.channel} for ${(m as any).customers?.company_name ?? "unknown"}`,
+        text: `Composed ${m.template_type ?? m.channel} for ${m.customers?.company_name ?? "unknown"}`,
         agentName: m.agent_name,
       });
     });
-    (pendingActions ?? []).filter((a: any) => a.run_id === latestRunId).forEach((a: any) => {
+    (pendingActions ?? []).forEach((a: any) => {
       initialLogs.push({
         id: `pending-${a.id}`,
         timestamp: a.created_at,
         icon: "pending",
-        text: `Pending approval: ${a.action_type?.replace(/_/g, " ")} for ${(a as any).customers?.company_name ?? "unknown"}`,
+        text: `Pending approval: ${a.action_type?.replace(/_/g, " ")} for ${a.customers?.company_name ?? "unknown"}`,
         agentName: a.agent_name,
       });
     });
     setLogEntries(initialLogs.sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
-  }, [sessionActivated, latestRunId, messages, pendingActions, latestRun]);
+  }, [allRuns, allMessages, pendingActions]);
+
+  // Filtered log entries based on selectedAgent
+  const filteredLogEntries = logEntries.filter(
+    (e) => selectedAgent === "all" || e.agentName === selectedAgent
+  );
 
   // Realtime subscription
   useEffect(() => {
