@@ -268,7 +268,7 @@ export default function Demo() {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
             queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] }),
             queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
           ]);
         } else {
