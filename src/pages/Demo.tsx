@@ -132,7 +132,10 @@ export default function Demo() {
     },
   });
 
-  const pendingCount = (pendingActions ?? []).filter((a: any) => a.status === "pending").length;
+  const filteredPending = (pendingActions ?? []).filter(
+    (a: any) => selectedAgent === "all" || a.agent_name === selectedAgent
+  );
+  const pendingCount = filteredPending.filter((a: any) => a.status === "pending").length;
 
   // Load initial log entries from latest run
   useEffect(() => {
