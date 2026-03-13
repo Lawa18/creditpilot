@@ -44,6 +44,7 @@ export default function Demo() {
   const [runningAgents, setRunningAgents] = useState<Set<string>>(new Set());
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string>("all");
   const [outputTab, setOutputTab] = useState("messages");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
