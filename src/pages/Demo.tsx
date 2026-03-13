@@ -565,8 +565,8 @@ export default function Demo() {
             </TabsContent>
 
             <TabsContent value="pending" className="flex-1 overflow-auto max-h-[560px] p-4 space-y-3 mt-0">
-              {!sessionActivated || !pendingActions || pendingActions.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">{sessionActivated ? "No pending actions." : "Run an agent to see pending actions."}</p>
+              {!pendingActions || pendingActions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No pending actions.</p>
               ) : (
                 (pendingActions as any[]).map((action) => {
                   const cust = (action as any).customers;
