@@ -352,7 +352,8 @@ export default function Demo() {
       setSessionActivated(false);
       queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       queryClient.invalidateQueries({ queryKey: ["latest-run"] });
-      queryClient.invalidateQueries({ queryKey: ["demo-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] });
       queryClient.invalidateQueries({ queryKey: ["demo-pending"] });
       queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
       queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
