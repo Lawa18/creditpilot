@@ -103,20 +103,22 @@ export default function Demo() {
     },
   });
 
-  // Messages for latest run
-  const { data: messages, refetch: refetchMessages } = useQuery({
-    queryKey: ["demo-messages", latestRunId],
+  // Messages — fetch all, not filtered by run
+  const { data: allMessages, refetch: refetchMessages } = useQuery({
+    queryKey: ["demo-messages-all"],
     queryFn: async () => {
-      if (!latestRunId) return [];
       const { data } = await supabase
         .from("agent_messages")
         .select("*, customers(company_name, ticker)")
-        .eq("run_id", latestRunId)
         .order("created_at", { ascending: true });
       return data ?? [];
     },
-    enabled: !!latestRunId,
   });
+
+  // Filtered views based on selectedAgent
+  const messages = (allMessages ?? []).filter(
+    (m: any) => selectedAgent === "all" || m.agent_name === selectedAgent
+  );
 
   // Pending actions (all, not just latest run)
   const { data: pendingActions, refetch: refetchPending } = useQuery({
