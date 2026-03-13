@@ -44,6 +44,7 @@ export default function Demo() {
   const [runningAgents, setRunningAgents] = useState<Set<string>>(new Set());
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string>("all");
   const [outputTab, setOutputTab] = useState("messages");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
@@ -102,20 +103,22 @@ export default function Demo() {
     },
   });
 
-  // Messages for latest run
-  const { data: messages, refetch: refetchMessages } = useQuery({
-    queryKey: ["demo-messages", latestRunId],
+  // Messages — fetch all, not filtered by run
+  const { data: allMessages, refetch: refetchMessages } = useQuery({
+    queryKey: ["demo-messages-all"],
     queryFn: async () => {
-      if (!latestRunId) return [];
       const { data } = await supabase
         .from("agent_messages")
         .select("*, customers(company_name, ticker)")
-        .eq("run_id", latestRunId)
         .order("created_at", { ascending: true });
       return data ?? [];
     },
-    enabled: !!latestRunId,
   });
+
+  // Filtered views based on selectedAgent
+  const messages = (allMessages ?? []).filter(
+    (m: any) => selectedAgent === "all" || m.agent_name === selectedAgent
+  );
 
   // Pending actions (all, not just latest run)
   const { data: pendingActions, refetch: refetchPending } = useQuery({
@@ -129,45 +132,65 @@ export default function Demo() {
     },
   });
 
-  const pendingCount = (pendingActions ?? []).filter((a: any) => a.status === "pending").length;
+  const filteredPending = (pendingActions ?? []).filter(
+    (a: any) => selectedAgent === "all" || a.agent_name === selectedAgent
+  );
+  const pendingCount = filteredPending.filter((a: any) => a.status === "pending").length;
 
-  // Load initial log entries from latest run
+  // Fetch all runs for log
+  const { data: allRuns } = useQuery({
+    queryKey: ["all-agent-runs"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("agent_runs")
+        .select("*")
+        .order("started_at", { ascending: true });
+      return data ?? [];
+    },
+  });
+
+  // Load initial log entries from all runs
   useEffect(() => {
-    if (!latestRunId || !messages) return;
+    if (!allRuns) return;
     const initialLogs: LogEntry[] = [];
-    if (latestRun) {
+    (allRuns as any[]).forEach((run) => {
       initialLogs.push({
-        id: `run-start-${latestRun.id}`,
-        timestamp: latestRun.started_at,
-        icon: latestRun.status === "running" ? "start" : latestRun.status === "completed" ? "complete" : "fail",
-        text: latestRun.status === "running"
-          ? `${getAgentConfig(latestRun.agent_name).label} started — scanning portfolio`
-          : latestRun.status === "completed"
-          ? `Run complete — ${latestRun.summary ?? "done"}`
+        id: `run-start-${run.id}`,
+        timestamp: run.started_at,
+        icon: run.status === "running" ? "start" : run.status === "completed" ? "complete" : "fail",
+        text: run.status === "running"
+          ? `${getAgentConfig(run.agent_name).label} started — scanning portfolio`
+          : run.status === "completed"
+          ? `Run complete — ${run.summary ?? "done"}`
           : `Run failed`,
-        agentName: latestRun.agent_name,
+        agentName: run.agent_name,
       });
-    }
-    (messages as any[]).forEach((m) => {
+    });
+    (allMessages ?? []).forEach((m: any) => {
       initialLogs.push({
         id: `msg-${m.id}`,
         timestamp: m.created_at,
         icon: "message",
-        text: `Composed ${m.template_type ?? m.channel} for ${(m as any).customers?.company_name ?? "unknown"}`,
+        text: `Composed ${m.template_type ?? m.channel} for ${m.customers?.company_name ?? "unknown"}`,
         agentName: m.agent_name,
       });
     });
-    (pendingActions ?? []).filter((a: any) => a.run_id === latestRunId).forEach((a: any) => {
+    (pendingActions ?? []).forEach((a: any) => {
       initialLogs.push({
         id: `pending-${a.id}`,
         timestamp: a.created_at,
         icon: "pending",
-        text: `Pending approval: ${a.action_type?.replace(/_/g, " ")} for ${(a as any).customers?.company_name ?? "unknown"}`,
+        text: `Pending approval: ${a.action_type?.replace(/_/g, " ")} for ${a.customers?.company_name ?? "unknown"}`,
         agentName: a.agent_name,
       });
     });
     setLogEntries(initialLogs.sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
-  }, [sessionActivated, latestRunId, messages, pendingActions, latestRun]);
+  }, [allRuns, allMessages, pendingActions]);
+
+  // Filtered log entries based on selectedAgent
+  const filteredLogEntries = logEntries.filter(
+    (e) => selectedAgent === "all" || e.agentName === selectedAgent
+  );
 
   // Realtime subscription
   useEffect(() => {
@@ -178,6 +201,7 @@ export default function Demo() {
         if (!row) return;
         queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
         queryClient.invalidateQueries({ queryKey: ["latest-run"] });
+        queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] });
         if (row.run_id) setLatestRunId(row.run_id);
         if (row.status === "running") {
           setRunningAgents((prev) => new Set(prev).add(row.agent_name));
@@ -235,7 +259,7 @@ export default function Demo() {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
             queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] }),
             queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
           ]);
         } else if (message?.includes("token_cap") || message?.includes("budget")) {
@@ -244,7 +268,7 @@ export default function Demo() {
           await Promise.all([
             queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
             queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-messages"] }),
+            queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] }),
             queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
           ]);
         } else {
@@ -328,7 +352,8 @@ export default function Demo() {
       setSessionActivated(false);
       queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       queryClient.invalidateQueries({ queryKey: ["latest-run"] });
-      queryClient.invalidateQueries({ queryKey: ["demo-messages"] });
+      queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] });
+      queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] });
       queryClient.invalidateQueries({ queryKey: ["demo-pending"] });
       queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
       queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
@@ -403,8 +428,41 @@ export default function Demo() {
         </div>
       </header>
 
-      {/* 3-column layout */}
-      <div className="max-w-[1400px] mx-auto p-6 grid grid-cols-[280px_1fr_380px] gap-6">
+      {/* Agent filter tabs + 3-column layout */}
+      <div className="max-w-[1400px] mx-auto px-6 pt-4 pb-0">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedAgent("all")}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              selectedAgent === "all"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            All Agents
+          </button>
+          {AGENTS.map((agent) => {
+            const config = getAgentConfig(agent.name);
+            return (
+              <button
+                key={agent.name}
+                onClick={() => setSelectedAgent(agent.name)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  selectedAgent === agent.name
+                    ? "text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+                style={selectedAgent === agent.name ? { backgroundColor: `hsl(var(--${config.colorClass}))` } : undefined}
+              >
+                {agent.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="max-w-[1400px] mx-auto px-6 pb-6 pt-4 grid grid-cols-[280px_1fr_380px] gap-6">
         {/* LEFT — Agent Controls */}
         <div className="space-y-4">
           {AGENTS.map((agent) => {
@@ -472,14 +530,14 @@ export default function Demo() {
             <h2 className="text-sm font-semibold text-foreground">Live Execution Log</h2>
           </div>
           <div ref={logRef} className="flex-1 overflow-auto max-h-[600px] p-4 space-y-2">
-            {logEntries.length === 0 ? (
+            {filteredLogEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
                 <Clock className="h-8 w-8 mb-3 opacity-50" />
                 <p className="text-sm">No agent runs yet.</p>
                 <p className="text-xs">Click Run Agent to see the agents work in real time.</p>
               </div>
             ) : (
-              logEntries.map((entry) => (
+              filteredLogEntries.map((entry) => (
                 <div key={entry.id} className="flex items-start gap-2 text-xs">
                   <span className="font-mono text-muted-foreground whitespace-nowrap w-16 shrink-0">
                     {format(new Date(entry.timestamp), "HH:mm:ss")}
@@ -565,10 +623,10 @@ export default function Demo() {
             </TabsContent>
 
             <TabsContent value="pending" className="flex-1 overflow-auto max-h-[560px] p-4 space-y-3 mt-0">
-              {!pendingActions || pendingActions.length === 0 ? (
+              {filteredPending.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No pending actions.</p>
               ) : (
-                (pendingActions as any[]).map((action) => {
+                filteredPending.map((action: any) => {
                   const cust = (action as any).customers;
                   const isReviewed = action.status !== "pending";
 
