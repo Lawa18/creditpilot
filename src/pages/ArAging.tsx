@@ -63,93 +63,104 @@ export default function ArAging() {
   if (pLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonTable /></div>;
 
   return (
-    <div className="flex gap-6">
-      <div className="flex-1 space-y-6 min-w-0">
-        <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-foreground">AR Aging Agent</h1>
-          <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing} className="h-8 text-xs gap-2">
-            <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh Aging
-          </Button>
-        </div>
-
-        {/* Portfolio Bar */}
-        <div className="bg-card rounded-xl border p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Portfolio Aging</h2>
-          <div className="flex h-8 rounded-lg overflow-hidden">
-            {segments.map((s) => {
-              const pct = total > 0 ? (s.value / total) * 100 : 0;
-              if (pct === 0) return null;
-              return (
-                <div key={s.label} className={`${s.className} relative`} style={{ width: `${pct}%` }} title={`${s.label}: ${formatCurrency(s.value)}`} />
-              );
-            })}
-          </div>
-          <div className="flex mt-2 gap-4">
-            {segments.map((s) => (
-              <div key={s.label} className="text-xs">
-                <div className="flex items-center gap-1.5">
-                  <span className={`w-2.5 h-2.5 rounded-sm ${s.className}`} />
-                  <span className="text-muted-foreground">{s.label}</span>
-                </div>
-                <p className="font-medium text-foreground ml-4">{formatCurrency(s.value)}</p>
-                <p className="text-muted-foreground ml-4">{total > 0 ? ((s.value / total) * 100).toFixed(1) : 0}%</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Customer Table */}
-        {cLoading ? <SkeletonTable rows={10} /> : (
-          <div className="bg-card rounded-xl border overflow-hidden">
-            <table className="w-full text-xs">
-              <thead className="bg-secondary/50 sticky top-0">
-                <tr className="text-muted-foreground">
-                  <th className="text-left p-3 font-medium">Customer</th>
-                  <th className="text-left p-3 font-medium">Risk</th>
-                  <th className="text-right p-3 font-medium">Current</th>
-                  <th className="text-right p-3 font-medium">1–30</th>
-                  <th className="text-right p-3 font-medium">31–60</th>
-                  <th className="text-right p-3 font-medium">61–90</th>
-                  <th className="text-right p-3 font-medium">90+</th>
-                  <th className="text-right p-3 font-medium">Total</th>
-                  <th className="text-right p-3 font-medium">Util%</th>
-                  <th className="text-right p-3 font-medium">DSO</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {(customers ?? []).filter(c => Number(c.total_ar) > 0).map((c: any) => (
-                  <tr key={c.id} className="hover:bg-secondary/30">
-                    <td className="p-3 font-medium">{c.company_name} <span className="text-muted-foreground ml-1">{c.ticker}</span></td>
-                    <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
-                    <td className="p-3 text-right">{formatCurrency(c.current_amount)}</td>
-                    <td className="p-3 text-right">{formatCurrency(c.days_1_30)}</td>
-                    <td className="p-3 text-right">{formatCurrency(c.days_31_60)}</td>
-                    <td className="p-3 text-right">{formatCurrency(c.days_61_90)}</td>
-                    <td className="p-3 text-right">{formatCurrency(c.days_over_90)}</td>
-                    <td className="p-3 text-right font-semibold">{formatCurrency(c.total_ar)}</td>
-                    <td className="p-3 text-right">{formatPct(c.utilization_pct)}</td>
-                    <td className="p-3 text-right">{c.dso ?? 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-foreground">AR Aging Agent</h1>
+        <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing} className="h-8 text-xs gap-2">
+          <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh Aging
+        </Button>
       </div>
 
-      {/* Right sidebar - recent actions */}
-      <div className="w-72 shrink-0">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Recent Agent Actions</h2>
-        <div className="space-y-2">
-          {(actions ?? []).map((a: any) => (
-            <div key={a.id} className="bg-card rounded-lg border p-3 border-l-4 border-l-agent-aging">
-              <p className="text-[10px] text-muted-foreground">{relativeTime(a.created_at)}</p>
-              <p className="text-xs font-medium text-foreground">{(a.customers as any).company_name}</p>
-              <p className="text-xs text-muted-foreground capitalize">{a.action_type.replace(/_/g, " ")}</p>
-              <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{a.description}</p>
+      {/* Portfolio Bar */}
+      <div className="bg-card rounded-xl border p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Portfolio Aging</h2>
+        <div className="flex h-8 rounded-lg overflow-hidden">
+          {segments.map((s) => {
+            const pct = total > 0 ? (s.value / total) * 100 : 0;
+            if (pct === 0) return null;
+            return (
+              <div key={s.label} className={`${s.className} relative`} style={{ width: `${pct}%` }} title={`${s.label}: ${formatCurrency(s.value)}`} />
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap mt-3 gap-x-6 gap-y-2">
+          {segments.map((s) => (
+            <div key={s.label} className="text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className={`w-2.5 h-2.5 rounded-full ${s.className}`} />
+                <span className="text-muted-foreground">{s.label}</span>
+              </div>
+              <p className="font-semibold text-foreground ml-4">{formatCurrency(s.value)}</p>
+              <p className="text-muted-foreground ml-4">{total > 0 ? ((s.value / total) * 100).toFixed(1) : 0}%</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      <div className="flex gap-6">
+        {/* Customer Table */}
+        <div className="flex-1 min-w-0">
+          {cLoading ? <SkeletonTable rows={10} /> : (
+            <div className="bg-card rounded-xl border overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-secondary/50 sticky top-0">
+                    <tr className="text-muted-foreground">
+                      <th className="text-left p-3 font-medium whitespace-nowrap">Customer</th>
+                      <th className="text-left p-3 font-medium">Risk</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">Current</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">1–30</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">31–60</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">61–90</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">90+</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">Total AR</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">Util%</th>
+                      <th className="text-right p-3 font-medium whitespace-nowrap">DSO</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {(customers ?? []).filter(c => Number(c.total_ar) > 0).map((c: any) => (
+                      <tr key={c.id} className="hover:bg-secondary/30">
+                        <td className="p-3">
+                          <span className="font-medium text-foreground">{c.company_name}</span>
+                          <span className="text-muted-foreground ml-1.5 text-[10px]">{c.ticker}</span>
+                        </td>
+                        <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.current_amount)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_1_30)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_31_60)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_61_90)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_over_90)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_ar)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatPct(c.utilization_pct)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{c.dso ?? 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Right sidebar - recent actions */}
+        <div className="w-64 shrink-0">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Recent Agent Actions</h2>
+          <div className="space-y-2">
+            {(actions ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">No actions yet. Run the AR Aging agent from the Live Demo.</p>
+            ) : (
+              (actions ?? []).map((a: any) => (
+                <div key={a.id} className="bg-card rounded-lg border p-3 border-l-4 border-l-agent-aging">
+                  <p className="text-[10px] text-muted-foreground">{relativeTime(a.created_at)}</p>
+                  <p className="text-xs font-medium text-foreground">{(a.customers as any).company_name}</p>
+                  <p className="text-xs text-muted-foreground capitalize">{a.action_type.replace(/_/g, " ")}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{a.description}</p>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
