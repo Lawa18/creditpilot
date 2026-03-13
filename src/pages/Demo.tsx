@@ -428,11 +428,41 @@ export default function Demo() {
         </div>
       </header>
 
-      {/* 3-column layout */}
-      <div className="max-w-[1400px] mx-auto p-6 grid grid-cols-[280px_1fr_380px] gap-6">
-        {/* LEFT — Agent Controls */}
-        <div className="space-y-4">
+      {/* Agent filter tabs + 3-column layout */}
+      <div className="max-w-[1400px] mx-auto px-6 pt-4 pb-0">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedAgent("all")}
+            className={cn(
+              "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+              selectedAgent === "all"
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted text-muted-foreground hover:text-foreground"
+            )}
+          >
+            All Agents
+          </button>
           {AGENTS.map((agent) => {
+            const config = getAgentConfig(agent.name);
+            return (
+              <button
+                key={agent.name}
+                onClick={() => setSelectedAgent(agent.name)}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                  selectedAgent === agent.name
+                    ? "text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                )}
+                style={selectedAgent === agent.name ? { backgroundColor: `hsl(var(--${config.colorClass}))` } : undefined}
+              >
+                {agent.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+      <div className="max-w-[1400px] mx-auto px-6 pb-6 pt-4 grid grid-cols-[280px_1fr_380px] gap-6">
             const config = getAgentConfig(agent.name);
             const lastRun = agentLastRuns?.[agent.name];
             const minutesAgo = lastRun?.started_at
