@@ -427,6 +427,10 @@ export default function Demo() {
             </AlertDialogContent>
           </AlertDialog>
         </div>
+        </div>
+        <div className="bg-agent-news/10 border border-agent-news/20 rounded-md px-4 py-2 text-sm text-sidebar-muted">
+          <span className="font-medium text-sidebar-foreground">Demo Mode:</span> For demonstration purposes, these agents are running manually. In production, they would run autonomously on a schedule.
+        </div>
       </header>
 
       {/* Agent filter tabs + 3-column layout */}
