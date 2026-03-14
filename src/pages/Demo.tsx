@@ -389,16 +389,17 @@ export default function Demo() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="bg-sidebar text-sidebar-foreground px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link to="/" className="text-sidebar-muted hover:text-sidebar-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <h1 className="font-semibold">Credit Agent Observer — Live Demo</h1>
-        </div>
-        <div className="flex items-center gap-4">
-          <p className="text-sm text-sidebar-muted">Global Trading Solutions Inc · 49 customers · $103M portfolio</p>
-          <AlertDialog>
+      <header className="bg-sidebar text-sidebar-foreground px-6 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="text-sidebar-muted hover:text-sidebar-foreground transition-colors">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+            <h1 className="font-semibold">Credit Agent Observer — Live Demo</h1>
+          </div>
+          <div className="flex items-center gap-4">
+            <p className="text-sm text-sidebar-muted">Global Trading Solutions Inc · 49 customers · $103M portfolio</p>
+            <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" size="sm" className="border-white/30 text-white bg-transparent hover:bg-white/10 hover:text-white text-sm gap-1.5">
                 <RotateCcw className="h-3.5 w-3.5" />
@@ -425,6 +426,10 @@ export default function Demo() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        </div>
+        </div>
+        <div className="bg-agent-news/10 border border-agent-news/20 rounded-md px-4 py-2 text-sm text-sidebar-muted">
+          <span className="font-medium text-sidebar-foreground">Demo Mode:</span> For demonstration purposes, these agents are running manually. In production, they would run autonomously on a schedule.
         </div>
       </header>
 
