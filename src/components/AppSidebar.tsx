@@ -20,7 +20,7 @@ export function AppSidebar() {
     queryFn: async () => {
       const [newsRes, secRes] = await Promise.all([
         supabase.from("negative_news").select("id", { count: "exact", head: true }).eq("reviewed", false),
-        supabase.from("sec_monitoring").select("id", { count: "exact", head: true }).eq("alert_triggered", true),
+        supabase.from("sec_filings").select("id", { count: "exact", head: true }).eq("reviewed", false),
       ]);
       return { news: newsRes.count ?? 0, sec: secRes.count ?? 0 };
     },
