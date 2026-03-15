@@ -388,7 +388,7 @@ export default function Demo() {
             <Link to="/" className="text-sidebar-muted hover:text-sidebar-foreground transition-colors">
               <ArrowLeft className="h-4 w-4" />
             </Link>
-            <h1 className="font-semibold">Credit Agent Observer — Live Demo</h1>
+            <h1 className="font-semibold">My Credit Pilot — Live Demo</h1>
           </div>
           <div className="flex items-center gap-4">
             <p className="text-sm text-sidebar-muted">Global Trading Solutions Inc · 49 customers · $103M portfolio</p>
