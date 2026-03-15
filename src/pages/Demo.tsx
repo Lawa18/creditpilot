@@ -621,7 +621,7 @@ export default function Demo() {
             </TabsContent>
 
             <TabsContent value="pending" className="flex-1 overflow-auto max-h-[560px] p-4 space-y-3 mt-0">
-              {filteredPending.length === 0 ? (
+              {!sessionActivated || filteredPending.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No pending actions.</p>
               ) : (
                 filteredPending.map((action: any) => {
