@@ -566,7 +566,7 @@ export default function Demo() {
             </div>
 
             <TabsContent value="messages" className="flex-1 overflow-auto max-h-[560px] p-4 space-y-3 mt-0">
-              {!messages || messages.length === 0 ? (
+              {!sessionActivated || !messages || messages.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-8">No messages from this run yet.</p>
               ) : (
                 (messages as any[]).map((msg) => {
