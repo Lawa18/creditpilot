@@ -28,47 +28,47 @@ export function AboutDialog() {
 
         <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
           <p>
-            Hey! I'm <span className="text-foreground font-medium">Lars-Erik Wallin</span>, and I built this as a working concept for what
-            AI-powered credit risk monitoring could look like in practice.
+            <span className="text-foreground font-medium">MyCreditPilot</span> is an open-source collection of autonomous AI agents that handle the day-to-day work of B2B credit management: credit limit adjustments, AR aging reviews, news monitoring, SEC filing alerts, and more.
           </p>
 
           <p>
-            The idea is simple: instead of manually tracking customer risk across
-            news, SEC filings, and AR aging reports, autonomous agents do the
-            heavy lifting — surfacing the signals that matter so credit teams can
-            act faster.
+            I built it to explore what modern AI agents can do for trade credit — starting with a demo company and dummy data to show the agents in action.
           </p>
 
           <Separator />
 
           <div className="space-y-2">
-            <h3 className="text-foreground font-medium flex items-center gap-2">
-              <Shield className="h-4 w-4 text-primary" />
-              Trade Credit Insurance with Coface
-            </h3>
-            <p>
-              Tools like this work even better when paired with trade credit
-              insurance. <span className="text-foreground font-medium">Coface</span> helps
-              businesses protect their receivables and trade with confidence —
-              covering the risk that customers can't pay.
+            <p className="text-foreground font-medium">
+              Want to run it on your own data? Deploy it yourself →{" "}
+              <a
+                href="https://github.com/larsewallin/mycreditpilot"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-primary hover:underline"
+              >
+                GitHub
+                <ExternalLink className="h-3 w-3" />
+              </a>
             </p>
-            <a
-              href="https://www.coface.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-primary hover:underline font-medium"
-            >
-              Learn more about Coface
-              <ExternalLink className="h-3.5 w-3.5" />
-            </a>
+            <p>
+              The agents connect directly to your ERP or AR system. Local deployment takes four environment variables and a few minutes.
+            </p>
           </div>
 
           <Separator />
 
           <div className="space-y-2">
             <p>
-              If you're in credit risk, trade finance, or just curious about
-              what's possible with AI agents — I'd love to connect!
+              By day I work in trade credit insurance at{" "}
+              <a
+                href="https://www.coface.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-foreground font-medium hover:underline"
+              >
+                Coface
+              </a>
+              . Follow along as new agents ship — or reach out if trade credit insurance is relevant to your business.
             </p>
             <Button asChild variant="outline" className="gap-2">
               <a
