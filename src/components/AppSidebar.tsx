@@ -1,4 +1,5 @@
 import { Zap, Newspaper, BarChart2, FileSearch, Users } from "lucide-react";
+import { AboutDialog } from "@/components/AboutDialog";
 import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
