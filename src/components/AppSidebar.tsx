@@ -1,4 +1,5 @@
 import { Zap, Newspaper, BarChart2, FileSearch, Users } from "lucide-react";
+import { AboutDialog } from "@/components/AboutDialog";
 import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -86,7 +87,8 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3 border-t border-sidebar-border space-y-1">
+        <AboutDialog />
         <p className="text-sidebar-muted text-xs px-3">{company?.name ?? "Loading..."}</p>
       </div>
     </aside>
