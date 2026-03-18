@@ -56,16 +56,35 @@ export default function Demo() {
   const [sessionActivated, setSessionActivated] = useState(() => {
     return sessionStorage.getItem("demo_activated") === "true";
   });
+  const [sessionAgents, setSessionAgents] = useState<Set<string>>(() => {
+    try {
+      const storedAgents = sessionStorage.getItem("demo_agents");
+      return new Set<string>(storedAgents ? JSON.parse(storedAgents) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
   const [revealCached, setRevealCached] = useState(false);
 
-  const activateSession = useCallback(() => {
+  const activateSession = useCallback((agentName: string) => {
     sessionStorage.setItem("demo_activated", "true");
     setSessionActivated(true);
+    setSessionAgents((prev) => {
+      const next = new Set(prev);
+      next.add(agentName);
+      sessionStorage.setItem("demo_agents", JSON.stringify(Array.from(next)));
+      return next;
+    });
   }, []);
 
   const addLog = useCallback((entry: Omit<LogEntry, "id">) => {
     setLogEntries((prev) => [...prev, { ...entry, id: crypto.randomUUID() }]);
   }, []);
+
+  const isSessionAgentVisible = useCallback(
+    (agentName: string | null | undefined) => !!agentName && sessionAgents.has(agentName),
+    [sessionAgents]
+  );
 
   // Fetch latest run on mount
   const { data: latestRun } = useQuery({
@@ -116,9 +135,12 @@ export default function Demo() {
     },
   });
 
-  // Filtered views based on selectedAgent
+  // Filtered views based on selectedAgent and current session agents
   const messages = (allMessages ?? []).filter(
-    (m: any) => selectedAgent === "all" || m.agent_name === selectedAgent
+    (m: any) =>
+      sessionActivated &&
+      isSessionAgentVisible(m.agent_name) &&
+      (selectedAgent === "all" || m.agent_name === selectedAgent)
   );
 
   // Pending actions (all, not just latest run)
@@ -134,9 +156,12 @@ export default function Demo() {
   });
 
   const filteredPending = (pendingActions ?? []).filter(
-    (a: any) => selectedAgent === "all" || a.agent_name === selectedAgent
+    (a: any) =>
+      sessionActivated &&
+      isSessionAgentVisible(a.agent_name) &&
+      (selectedAgent === "all" || a.agent_name === selectedAgent)
   );
-  const pendingCount = sessionActivated ? filteredPending.filter((a: any) => a.status === "pending").length : 0;
+  const pendingCount = filteredPending.filter((a: any) => a.status === "pending").length;
 
   // Fetch all runs for log
   const { data: allRuns } = useQuery({
@@ -162,8 +187,8 @@ export default function Demo() {
         text: run.status === "running"
           ? `${getAgentConfig(run.agent_name).label} started — scanning portfolio`
           : run.status === "completed"
-          ? `Run complete — ${run.summary ?? "done"}`
-          : `Run failed`,
+            ? `Run complete — ${run.summary ?? "done"}`
+            : `Run failed`,
         agentName: run.agent_name,
       });
     });
@@ -188,10 +213,14 @@ export default function Demo() {
     setLogEntries(initialLogs.sort((a, b) => a.timestamp.localeCompare(b.timestamp)));
   }, [allRuns, allMessages, pendingActions]);
 
-  // Filtered log entries based on selectedAgent
-  const filteredLogEntries = logEntries.filter(
-    (e) => selectedAgent === "all" || e.agentName === selectedAgent
-  );
+  // Filtered log entries based on selectedAgent and current session agents
+  const filteredLogEntries = sessionActivated
+    ? logEntries.filter(
+        (e) =>
+          isSessionAgentVisible(e.agentName) &&
+          (selectedAgent === "all" || e.agentName === selectedAgent)
+      )
+    : [];
 
   // Realtime subscription
   useEffect(() => {
