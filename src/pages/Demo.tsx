@@ -243,6 +243,8 @@ export default function Demo() {
 
   // Run agent
   const runAgent = async (agent: typeof AGENTS[number]) => {
+    if (runningRef.current) return; // Prevent concurrent launches
+    runningRef.current = true;
     activateSession();
     setRunningAgents((prev) => new Set(prev).add(agent.name));
     try {
