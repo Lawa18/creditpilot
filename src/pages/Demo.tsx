@@ -209,6 +209,7 @@ export default function Demo() {
           addLog({ timestamp: row.started_at, icon: "start", text: `${getAgentConfig(row.agent_name).label} started — scanning portfolio`, agentName: row.agent_name });
         } else if (row.status === "completed") {
           setRunningAgents((prev) => { const s = new Set(prev); s.delete(row.agent_name); return s; });
+          runningRef.current = false;
           addLog({ timestamp: row.completed_at ?? new Date().toISOString(), icon: "complete", text: `Run complete — ${row.summary ?? "done"}`, agentName: row.agent_name });
           refetchMessages();
           refetchPending();
