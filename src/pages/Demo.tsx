@@ -42,6 +42,7 @@ const AGENTS = [
 export default function Demo() {
   const queryClient = useQueryClient();
   const [runningAgents, setRunningAgents] = useState<Set<string>>(new Set());
+  const runningRef = useRef(false); // Guard against race conditions
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string>("all");
@@ -208,12 +209,14 @@ export default function Demo() {
           addLog({ timestamp: row.started_at, icon: "start", text: `${getAgentConfig(row.agent_name).label} started — scanning portfolio`, agentName: row.agent_name });
         } else if (row.status === "completed") {
           setRunningAgents((prev) => { const s = new Set(prev); s.delete(row.agent_name); return s; });
+          runningRef.current = false;
           addLog({ timestamp: row.completed_at ?? new Date().toISOString(), icon: "complete", text: `Run complete — ${row.summary ?? "done"}`, agentName: row.agent_name });
           refetchMessages();
           refetchPending();
           queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
         } else if (row.status === "failed") {
           setRunningAgents((prev) => { const s = new Set(prev); s.delete(row.agent_name); return s; });
+          runningRef.current = false;
           addLog({ timestamp: row.completed_at ?? new Date().toISOString(), icon: "fail", text: `Run failed — ${row.summary ?? "error"}`, agentName: row.agent_name });
         }
       })
@@ -242,6 +245,8 @@ export default function Demo() {
 
   // Run agent
   const runAgent = async (agent: typeof AGENTS[number]) => {
+    if (runningRef.current) return; // Prevent concurrent launches
+    runningRef.current = true;
     activateSession();
     setRunningAgents((prev) => new Set(prev).add(agent.name));
     try {
@@ -275,10 +280,12 @@ export default function Demo() {
           toast.error(`Failed to invoke ${agent.label}`);
         }
         setRunningAgents((prev) => { const s = new Set(prev); s.delete(agent.name); return s; });
+        runningRef.current = false;
       }
     } catch {
       toast.error(`Failed to invoke ${agent.label}`);
       setRunningAgents((prev) => { const s = new Set(prev); s.delete(agent.name); return s; });
+      runningRef.current = false;
     }
   };
 
