@@ -276,7 +276,7 @@ export default function Demo() {
   const runAgent = async (agent: typeof AGENTS[number]) => {
     if (runningRef.current) return; // Prevent concurrent launches
     runningRef.current = true;
-    activateSession();
+    activateSession(agent.name);
     setRunningAgents((prev) => new Set(prev).add(agent.name));
     try {
       const { data, error } = await supabase.functions.invoke(agent.fnName, {
