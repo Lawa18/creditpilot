@@ -216,6 +216,7 @@ export default function Demo() {
           queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
         } else if (row.status === "failed") {
           setRunningAgents((prev) => { const s = new Set(prev); s.delete(row.agent_name); return s; });
+          runningRef.current = false;
           addLog({ timestamp: row.completed_at ?? new Date().toISOString(), icon: "fail", text: `Run failed — ${row.summary ?? "error"}`, agentName: row.agent_name });
         }
       })
