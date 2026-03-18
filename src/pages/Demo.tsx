@@ -42,6 +42,7 @@ const AGENTS = [
 export default function Demo() {
   const queryClient = useQueryClient();
   const [runningAgents, setRunningAgents] = useState<Set<string>>(new Set());
+  const runningRef = useRef(false); // Guard against race conditions
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
   const [selectedAgent, setSelectedAgent] = useState<string>("all");
