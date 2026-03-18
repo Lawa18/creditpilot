@@ -274,47 +274,95 @@ export default function Demo() {
 
   // Run agent
   const runAgent = async (agent: typeof AGENTS[number]) => {
-    if (runningRef.current) return; // Prevent concurrent launches
+    if (runningRef.current) return;
+
+    const finishLaunch = () => {
+      setRunningAgents((prev) => {
+        const next = new Set(prev);
+        next.delete(agent.name);
+        return next;
+      });
+      runningRef.current = false;
+    };
+
+    const extractErrorText = (error: unknown) => {
+      if (!error) return "";
+      if (typeof error === "string") return error;
+      if (error instanceof Error) return error.message;
+      if (typeof error === "object") {
+        const err = error as Record<string, any>;
+        return [
+          err.message,
+          err.details,
+          typeof err.error === "string" ? err.error : "",
+          err.context?.message,
+          typeof err.context === "string" ? err.context : "",
+        ]
+          .filter((value): value is string => typeof value === "string" && value.length > 0)
+          .join(" ");
+      }
+      return "";
+    };
+
+    const revealCachedResults = async (message: string) => {
+      activateSession(agent.name);
+      setRevealCached(true);
+      toast.info(message, { duration: 5000 });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
+        queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
+        queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] }),
+        queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] }),
+        queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
+      ]);
+    };
+
     runningRef.current = true;
-    activateSession(agent.name);
+    setRevealCached(false);
     setRunningAgents((prev) => new Set(prev).add(agent.name));
+
     try {
       const { data, error } = await supabase.functions.invoke(agent.fnName, {
         body: { triggered_by: "demo_page" },
       });
+
       if (error) {
-        const errBody = typeof error === "object" && error !== null ? error : {};
-        const message = (errBody as any)?.message || (errBody as any)?.context?.message;
-        if (message?.includes("rate_limit") || message?.includes("recently")) {
-          toast.info("This agent was run recently. Loading cached results.", { duration: 5000 });
-          // Reveal cached results with animation
-          setRevealCached(true);
-          // Refresh queries to load the existing cached data
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
-            queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
-          ]);
-        } else if (message?.includes("token_cap") || message?.includes("budget")) {
-          toast.info("AI analysis budget reached. Loading cached results.", { duration: 5000 });
-          setRevealCached(true);
-          await Promise.all([
-            queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
-            queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-messages-all"] }),
-            queryClient.invalidateQueries({ queryKey: ["demo-pending"] }),
-          ]);
+        const errorText = extractErrorText(error).toLowerCase();
+
+        if (errorText.includes("rate_limited") || errorText.includes("recently")) {
+          await revealCachedResults("This agent was run recently. Loading cached results.");
+        } else if (errorText.includes("token_cap") || errorText.includes("budget")) {
+          await revealCachedResults("AI analysis budget reached. Loading cached results.");
         } else {
           toast.error(`Failed to invoke ${agent.label}`);
         }
-        setRunningAgents((prev) => { const s = new Set(prev); s.delete(agent.name); return s; });
-        runningRef.current = false;
+
+        finishLaunch();
+        return;
       }
-    } catch {
-      toast.error(`Failed to invoke ${agent.label}`);
-      setRunningAgents((prev) => { const s = new Set(prev); s.delete(agent.name); return s; });
-      runningRef.current = false;
+
+      activateSession(agent.name);
+      if ((data as { run_id?: string } | null)?.run_id) {
+        setLatestRunId((data as { run_id: string }).run_id);
+      }
+
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] }),
+        queryClient.invalidateQueries({ queryKey: ["latest-run"] }),
+        queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] }),
+      ]);
+    } catch (error) {
+      const errorText = extractErrorText(error).toLowerCase();
+
+      if (errorText.includes("rate_limited") || errorText.includes("recently")) {
+        await revealCachedResults("This agent was run recently. Loading cached results.");
+      } else if (errorText.includes("token_cap") || errorText.includes("budget")) {
+        await revealCachedResults("AI analysis budget reached. Loading cached results.");
+      } else {
+        toast.error(`Failed to invoke ${agent.label}`);
+      }
+
+      finishLaunch();
     }
   };
 
