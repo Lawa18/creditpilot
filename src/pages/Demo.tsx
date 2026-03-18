@@ -278,6 +278,7 @@ export default function Demo() {
           toast.error(`Failed to invoke ${agent.label}`);
         }
         setRunningAgents((prev) => { const s = new Set(prev); s.delete(agent.name); return s; });
+        runningRef.current = false;
       }
     } catch {
       toast.error(`Failed to invoke ${agent.label}`);
