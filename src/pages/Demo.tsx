@@ -556,6 +556,7 @@ export default function Demo() {
               ? Math.round((Date.now() - new Date(lastRun.started_at).getTime()) / 60000)
               : null;
             const isRunning = runningAgents.has(agent.name);
+            const isAgentVisible = sessionActivated && isSessionAgentVisible(agent.name);
 
             return (
               <div key={agent.name} className="bg-card rounded-xl border shadow-sm overflow-hidden">
@@ -565,7 +566,7 @@ export default function Demo() {
                     <p className="font-semibold text-sm text-foreground">{agent.label}</p>
                     <p className="text-[10px] font-mono text-muted-foreground">{agent.name}</p>
                   </div>
-                  {sessionActivated ? (
+                  {isAgentVisible ? (
                     <>
                       <p className="text-xs text-muted-foreground">
                         Last run: {minutesAgo != null ? `${minutesAgo}m ago` : "Never"}
