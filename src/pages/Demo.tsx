@@ -378,7 +378,9 @@ export default function Demo() {
       setRunningAgents(new Set());
       setRevealCached(false);
       sessionStorage.removeItem("demo_activated");
+      sessionStorage.removeItem("demo_agents");
       setSessionActivated(false);
+      setSessionAgents(new Set());
       queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       queryClient.invalidateQueries({ queryKey: ["latest-run"] });
       queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] });
