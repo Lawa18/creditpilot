@@ -299,20 +299,26 @@ export default function Demo() {
       runningRef.current = false;
     };
 
-    const extractErrorText = (error: unknown) => {
+    const extractErrorText = async (error: unknown): Promise<string> => {
       if (!error) return "";
       if (typeof error === "string") return error;
-      if (error instanceof Error) return error.message;
+      // FunctionsHttpError: context is a Response object — read body
+      if (error instanceof Error) {
+        const err = error as any;
+        if (err.context && typeof err.context.json === "function") {
+          try {
+            const body = await err.context.json();
+            return [body?.error, body?.message, err.message]
+              .filter((v): v is string => typeof v === "string" && v.length > 0)
+              .join(" ");
+          } catch { /* fall through */ }
+        }
+        return err.message ?? "";
+      }
       if (typeof error === "object") {
         const err = error as Record<string, any>;
-        return [
-          err.message,
-          err.details,
-          typeof err.error === "string" ? err.error : "",
-          err.context?.message,
-          typeof err.context === "string" ? err.context : "",
-        ]
-          .filter((value): value is string => typeof value === "string" && value.length > 0)
+        return [err.message, err.details, typeof err.error === "string" ? err.error : ""]
+          .filter((v): v is string => typeof v === "string" && v.length > 0)
           .join(" ");
       }
       return "";
