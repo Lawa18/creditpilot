@@ -299,29 +299,21 @@ export default function Demo() {
       runningRef.current = false;
     };
 
-    const extractErrorText = async (error: unknown): Promise<string> => {
-      if (!error) return "";
-      if (typeof error === "string") return error;
-      // FunctionsHttpError: context is a Response object — read body
-      if (error instanceof Error) {
-        const err = error as any;
-        if (err.context && typeof err.context.json === "function") {
-          try {
-            const body = await err.context.json();
-            return [body?.error, body?.message, err.message]
-              .filter((v): v is string => typeof v === "string" && v.length > 0)
-              .join(" ");
-          } catch { /* fall through */ }
-        }
-        return err.message ?? "";
-      }
-      if (typeof error === "object") {
-        const err = error as Record<string, any>;
-        return [err.message, err.details, typeof err.error === "string" ? err.error : ""]
-          .filter((v): v is string => typeof v === "string" && v.length > 0)
-          .join(" ");
-      }
-      return "";
+    const isRateLimitedError = (error: unknown): boolean => {
+      if (!error) return false;
+      const err = error as any;
+      // Check HTTP status on the Response context
+      if (err.context && typeof err.context.status === "number" && err.context.status === 429) return true;
+      // Check error message text
+      const msg = (err.message ?? err.error ?? "").toLowerCase();
+      return msg.includes("rate_limited") || msg.includes("recently") || msg.includes("429");
+    };
+
+    const isBudgetError = (error: unknown): boolean => {
+      if (!error) return false;
+      const err = error as any;
+      const msg = (err.message ?? err.error ?? "").toLowerCase();
+      return msg.includes("token_cap") || msg.includes("budget");
     };
 
     const revealCachedResults = async (message: string) => {
