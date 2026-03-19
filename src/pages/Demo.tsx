@@ -170,11 +170,12 @@ export default function Demo() {
 
   const filteredPending = (pendingActions ?? []).filter(
     (a: any) =>
+      a.status === "pending" &&
       sessionActivated &&
       isSessionAgentVisible(a.agent_name) &&
       (selectedAgent === "all" || a.agent_name === selectedAgent)
   );
-  const pendingCount = filteredPending.filter((a: any) => a.status === "pending").length;
+  const pendingCount = filteredPending.length;
 
   // Fetch all runs for log
   const { data: allRuns } = useQuery({
