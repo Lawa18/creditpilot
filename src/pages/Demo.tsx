@@ -304,9 +304,14 @@ export default function Demo() {
       const err = error as any;
       // Check HTTP status on the Response context
       if (err.context && typeof err.context.status === "number" && err.context.status === 429) return true;
+      // FunctionsHttpError class name check
+      if (err.name === "FunctionsHttpError" || err.constructor?.name === "FunctionsHttpError") {
+        // Any non-2xx from our edge functions in demo context is likely rate-limited
+        return true;
+      }
       // Check error message text
       const msg = (err.message ?? err.error ?? "").toLowerCase();
-      return msg.includes("rate_limited") || msg.includes("recently") || msg.includes("429");
+      return msg.includes("rate_limited") || msg.includes("recently") || msg.includes("429") || msg.includes("non-2xx");
     };
 
     const isBudgetError = (error: unknown): boolean => {
