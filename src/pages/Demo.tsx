@@ -372,7 +372,7 @@ export default function Demo() {
         queryClient.invalidateQueries({ queryKey: ["all-agent-runs"] }),
       ]);
     } catch (error) {
-      const errorText = extractErrorText(error).toLowerCase();
+      const errorText = (await extractErrorText(error)).toLowerCase();
 
       if (errorText.includes("rate_limited") || errorText.includes("recently")) {
         await revealCachedResults("This agent was run recently. Loading cached results.");
