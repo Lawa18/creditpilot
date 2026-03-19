@@ -339,11 +339,9 @@ export default function Demo() {
       });
 
       if (error) {
-        const errorText = (await extractErrorText(error)).toLowerCase();
-
-        if (errorText.includes("rate_limited") || errorText.includes("recently")) {
+        if (isRateLimitedError(error)) {
           await revealCachedResults("This agent was run recently. Loading cached results.");
-        } else if (errorText.includes("token_cap") || errorText.includes("budget")) {
+        } else if (isBudgetError(error)) {
           await revealCachedResults("AI analysis budget reached. Loading cached results.");
         } else {
           toast.error(`Failed to invoke ${agent.label}`);
