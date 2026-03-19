@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { getAgentConfig } from "@/lib/constants";
@@ -135,12 +135,25 @@ export default function Demo() {
     },
   });
 
-  // Filtered views based on selectedAgent and current session agents
+  // Determine the latest run_id per agent so we only show messages from the most recent run
+  const latestRunIdPerAgent = React.useMemo(() => {
+    const map: Record<string, string> = {};
+    if (agentLastRuns) {
+      for (const agent of AGENTS) {
+        const run = agentLastRuns[agent.name];
+        if (run?.run_id) map[agent.name] = run.run_id;
+      }
+    }
+    return map;
+  }, [agentLastRuns]);
+
+  // Filtered views based on selectedAgent, current session agents, and latest run per agent
   const messages = (allMessages ?? []).filter(
     (m: any) =>
       sessionActivated &&
       isSessionAgentVisible(m.agent_name) &&
-      (selectedAgent === "all" || m.agent_name === selectedAgent)
+      (selectedAgent === "all" || m.agent_name === selectedAgent) &&
+      latestRunIdPerAgent[m.agent_name] === m.run_id
   );
 
   // Pending actions (all, not just latest run)
@@ -157,11 +170,12 @@ export default function Demo() {
 
   const filteredPending = (pendingActions ?? []).filter(
     (a: any) =>
+      a.status === "pending" &&
       sessionActivated &&
       isSessionAgentVisible(a.agent_name) &&
       (selectedAgent === "all" || a.agent_name === selectedAgent)
   );
-  const pendingCount = filteredPending.filter((a: any) => a.status === "pending").length;
+  const pendingCount = filteredPending.length;
 
   // Fetch all runs for log
   const { data: allRuns } = useQuery({
