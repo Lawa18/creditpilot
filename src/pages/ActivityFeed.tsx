@@ -39,9 +39,13 @@ export default function ActivityFeed() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
+  // Only show pending actions banner if visitor has an active demo session
+  const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
+
   const { data: pendingCount } = useQuery({
-    queryKey: ["pending-actions-count"],
+    queryKey: ["pending-actions-count", hasActiveSession],
     queryFn: async () => {
+      if (!hasActiveSession) return 0;
       const { count } = await supabase
         .from("pending_actions")
         .select("*", { count: "exact", head: true })
