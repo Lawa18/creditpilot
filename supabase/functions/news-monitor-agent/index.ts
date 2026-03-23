@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
+import { composeTeamsAlert } from "../_shared/skills/generative/compose-teams-alert.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -32,7 +33,7 @@ Deno.serve(async (req) => {
   if (recentRuns && recentRuns.length > 0) {
     return new Response(JSON.stringify({
       error: "rate_limited",
-      message: `This agent was run recently. Please wait before running again.`,
+      message: "This agent was run recently. Please wait before running again.",
       last_run_at: recentRuns[0].started_at,
     }), {
       status: 429,
@@ -58,12 +59,25 @@ Deno.serve(async (req) => {
       .order("news_date", { ascending: false });
 
     const scanned = news?.length ?? 0;
-    const critical = (news ?? []).filter((n: any) => n.severity === "critical" || n.severity === "high");
+    const critical = (news ?? []).filter(
+      (n: any) => n.severity === "critical" || n.severity === "high"
+    );
     const conditionsFound = critical.length;
     let messagesComposed = 0;
 
     for (const item of critical.slice(0, 5)) {
       const cust = (item as any).customers;
+
+      const alert = composeTeamsAlert({
+        alert_type: "news_alert",
+        company_name: cust?.company_name ?? "Unknown",
+        ticker: cust?.ticker,
+        severity: item.severity as "critical" | "high" | "medium" | "low",
+        headline: item.headline,
+        details: `Source: ${item.source} | Date: ${item.news_date} | Category: ${item.category}\nSentiment score: ${item.sentiment_score}\n\n${item.summary}`,
+        recommended_action: `Review and assess credit impact for ${cust?.company_name} (${cust?.ticker}).`,
+      });
+
       await supabase.from("agent_messages").insert({
         run_id,
         agent_name,
@@ -72,8 +86,8 @@ Deno.serve(async (req) => {
         template_type: "news_alert",
         recipient_type: "internal",
         recipient_name: "Credit Risk Team",
-        subject: `📰 ${item.severity?.toUpperCase()} news: ${cust?.company_name}`,
-        body: `News Alert — ${item.severity?.toUpperCase()}\n${item.headline}\n\nSource: ${item.source} | Date: ${item.news_date}\nCategory: ${item.category}\nSentiment: ${item.sentiment_score}\n\nSummary: ${item.summary}\n\nAction required: Review and assess credit impact for ${cust?.company_name} (${cust?.ticker}).`,
+        subject: alert.subject,
+        body: alert.body,
         status: "composed",
       });
       messagesComposed++;

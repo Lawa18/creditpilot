@@ -1,73 +1,174 @@
-# Welcome to your Lovable project
+# CreditPilot — AI Agents for Trade Credit Management
 
-## Project info
+CreditPilot is an open-source set of autonomous AI agents that automate the day-to-day work of B2B credit management — dunning letters, news monitoring, SEC filing alerts, credit limit reviews, and more.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+I built this over a weekend to explore what's possible when you apply modern AI agents to trade credit — a domain that has been largely untouched by automation compared to consumer finance.
 
-## How can I edit this code?
+**Try the live demo →** https://mycreditpilot.lovable.app
+A fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios — bankruptcies, payment issues, credit deterioration, negative news. Run the agents yourself. No signup required.
 
-There are several ways of editing your application.
+**Deploy it yourself →** https://github.com/Lawa18/Creditpilot
+The agents connect to your own ERP or AR data instead of the demo company. Straightforward to deploy locally. Four environment variables and you're running.
 
-**Use Lovable**
+---
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## What it does
 
-Changes made via Lovable will be committed automatically to this repo.
+Three agents run against your accounts receivable portfolio:
 
-**Use your preferred IDE**
+| Agent | What it monitors | What it does |
+|-------|-----------------|-------------|
+| **AR Aging** | Overdue invoices | Sends dunning letters (stages 1–4), proposes credit limit reductions for 60+ day accounts, proposes credit holds for 90+ day accounts |
+| **News Monitor** | Web news via Tavily | Finds negative news about customers, classifies severity with Claude, sends internal alerts, proposes credit reviews for high/critical findings |
+| **SEC Filing Monitor** | EDGAR filings | Monitors 10-K/10-Q/8-K for going concern warnings, covenant breaches, management changes |
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+Agents write their findings and composed messages to a Supabase database. A web UI shows what the agents found, renders the messages they composed, and lets a human approve or reject proposed actions.
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+No email provider required. No Teams webhook required. Messages are stored in the database and shown in the UI — external delivery is optional.
 
-Follow these steps:
+---
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+## Quick start
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+### Prerequisites
+- [Supabase](https://supabase.com) account (free tier works)
+- [Anthropic API key](https://console.anthropic.com) — for news agent classification
+- [Tavily API key](https://tavily.com) — for news agent web search (1,000 searches/month free)
 
-# Step 3: Install the necessary dependencies.
-npm i
+### 1. Create a Supabase project
+Go to supabase.com → New project. Note your project URL and anon key from Settings → API.
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+### 2. Apply the schema
+In Supabase → SQL Editor, run schema.sql in full.
+
+### 3. Load demo data
+Run seed.sql in Supabase SQL Editor to load the demo company — Global Trading Solutions Inc, a fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios.
+
+### 4. Deploy the agents
+In Supabase dashboard → Edge Functions → New Function:
+- Create function named ar-aging-agent, paste contents of supabase/functions/ar-aging-agent/index.ts, deploy
+- Create function named news-monitor-agent, paste contents of supabase/functions/news-monitor-agent/index.ts, deploy
+
+### 5. Set environment variables
+In Supabase → Edge Functions → Manage secrets:
+ANTHROPIC_API_KEY   = sk-ant-...
+TAVILY_API_KEY      = tvly-...
+
+### 6. Run the UI
+```bash
+cd ui
+npm install
+cp .env.example .env
+# Add your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Repository structure
+creditpilot/
+├── schema.sql                          # Full database schema
+├── seed.sql                            # Demo company data (49 customers)
+├── migration_001.sql                   # Agent infrastructure tables
+├── migration_002.sql                   # Agent 4-8 tables
+│
+├── supabase/
+│   └── functions/
+│       ├── _shared/                    # Shared utilities
+│       ├── ar-aging-agent/             # AR Aging Agent
+│       └── news-monitor-agent/         # News Monitor Agent
+│
+└── src/                                # React UI (built with Lovable)
+    ├── pages/
+    │   ├── ActivityFeed.tsx
+    │   ├── NewsMonitor.tsx
+    │   ├── ARaging.tsx
+    │   ├── SECFilings.tsx
+    │   ├── Customers.tsx
+    │   └── Demo.tsx
+    └── components/
 
-**Use GitHub Codespaces**
+---
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Agent roster — current and planned
 
-## What technologies are used for this project?
+| # | Agent | Status | What it does |
+|---|-------|--------|-------------|
+| 1 | AR Aging | ✅ Built | Dunning letters, credit limit proposals, credit holds |
+| 2 | News Monitor | ✅ Built | Web news search, Claude classification, credit alerts |
+| 3 | SEC Filing Monitor | ✅ Built | EDGAR filing alerts, risk signal detection |
+| 4 | Trade Reference | 🔜 Planned | Automates outbound credit reference letters |
+| 5 | Payment Behaviour Monitor | 🔜 Planned | Detects deterioration before invoices go overdue |
+| 6 | Credit Limit Review | 🔜 Planned | Stale limit detection, increase/decrease proposals |
+| 7 | Bankruptcy & Distress Monitor | 🔜 Planned | Court filings, claim deadlines, recovery tracking |
+| 8 | Onboarding & Credit Scoring | 🔜 Planned | Initial credit memo, limit proposal, risk rating |
 
-This project is built with:
+---
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Skills
 
-## How can I deploy this project?
+Agents are built from reusable skills — composable functions that do one thing well. Skills live in supabase/functions/_shared/skills/ and are called by multiple agents.
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+With a poor prompt you get a poor response. With poor skills you get poor agents. The quality of your agents is a direct reflection of the domain expertise encoded in their skills.
 
-## Can I connect a custom domain to my Lovable project?
+Current skills embedded in agents (extraction in progress):
+- analyse-payment-behaviour
+- calculate-credit-limit-proposal
+- compose-dunning-letter
+- compose-teams-alert
+- classify-news
+- search-news
 
-Yes, you can!
+---
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Environment variables
+In Supabase secrets (for the agents):
+ANTHROPIC_API_KEY=sk-ant-...
+TAVILY_API_KEY=tvly-...
+In the UI .env file (for the frontend):
+VITE_SUPABASE_URL=https://xxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+---
+
+## Security
+
+### For the public demo (fictional data)
+The demo page at /demo is intentionally public and unauthenticated. Anyone can run agents, approve/reject pending actions, and reset the demo. This is by design.
+
+### Before loading real company data
+1. Remove anon write policies from pending_actions, customers, credit_actions
+2. Add authentication to the main UI (Supabase Auth)
+3. Use a dedicated Supabase project — not the same one as the demo
+4. Upgrade from Supabase free tier (free tier pauses after 1 week of inactivity)
+
+---
+
+## Contributing
+
+Agents follow a consistent pattern. To add a new agent:
+1. Create supabase/functions/your-agent-name/index.ts
+2. Create an agent_runs record at the start
+3. Write findings to the appropriate table
+4. Write messages to agent_messages
+5. Write proposed actions to pending_actions
+6. Update agent_runs with stats and summary at the end
+7. Add a Run button on the /demo page
+
+To contribute a skill, add it to supabase/functions/_shared/skills/ following the skill contract in CONTRIBUTING.md.
+
+---
+
+## License
+
+MIT — use it, fork it, build on it.
+
+---
+
+## About
+
+Built by Lars Wallin — Head of Financial Institutions at Coface, one of the world's largest trade credit insurance companies. This project applies that domain expertise to autonomous AI agents for B2B credit managers.
+
+Connect on LinkedIn: https://www.linkedin.com/in/larsewallin/
+
+The demo company (Global Trading Solutions Inc) and all 49 customer accounts are entirely fictional.
