@@ -1,0 +1,4 @@
+-- CreditPilot Migration 001
+-- Agent infrastructure tables: agent_runs, agent_messages, pending_actions
+-- Run this third in Supabase SQL Editor
+-- Full migration coming — paste content here

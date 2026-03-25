@@ -1,0 +1,4 @@
+-- CreditPilot Migration 002
+-- Extended schema for agents 4-8
+-- Run this fourth in Supabase SQL Editor
+-- Full migration coming — paste content here

@@ -1,0 +1,3 @@
+-- CreditPilot Database Schema
+-- Run this first in Supabase SQL Editor
+-- Full schema coming — paste content here

@@ -23,9 +23,9 @@ cp .env.example .env
 
 ### 3. Set up the database
 In Supabase SQL Editor, run in order:
-1. `schema.sql`
-2. `seed.sql`
-3. `migration_001.sql`
+1. `database/schema.sql`
+2. `database/seed.sql`
+3. `database/migration_001.sql`
 
 ### 4. Deploy agents to Supabase
 ```bash

@@ -39,10 +39,10 @@ No email provider required. No Teams webhook required. Messages are stored in th
 Go to supabase.com → New project. Note your project URL and anon key from Settings → API.
 
 ### 2. Apply the schema
-In Supabase → SQL Editor, run schema.sql in full.
+In Supabase → SQL Editor, run database/schema.sql in full.
 
 ### 3. Load demo data
-Run seed.sql in Supabase SQL Editor to load the demo company — Global Trading Solutions Inc, a fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios.
+Run database/seed.sql in Supabase SQL Editor to load the demo company — Global Trading Solutions Inc, a fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios.
 
 ### 4. Deploy the agents
 In Supabase dashboard → Edge Functions → New Function:
@@ -67,10 +67,11 @@ npm run dev
 
 ## Repository structure
 creditpilot/
-├── schema.sql                          # Full database schema
-├── seed.sql                            # Demo company data (49 customers)
-├── migration_001.sql                   # Agent infrastructure tables
-├── migration_002.sql                   # Agent 4-8 tables
+├── database/
+│   ├── schema.sql                      # Full database schema
+│   ├── seed.sql                        # Demo company data (49 customers)
+│   ├── migration_001.sql               # Agent infrastructure tables
+│   └── migration_002.sql              # Agent 4-8 tables
 │
 ├── supabase/
 │   └── functions/

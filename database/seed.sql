@@ -1,0 +1,4 @@
+-- CreditPilot Demo Data
+-- Run this second in Supabase SQL Editor
+-- Global Trading Solutions Inc — 49 customers, 7 credit scenarios
+-- Full seed data coming — paste content here
