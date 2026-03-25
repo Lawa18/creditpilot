@@ -2,7 +2,7 @@
 
 CreditPilot is an open-source set of autonomous AI agents that automate the day-to-day work of B2B credit management — dunning letters, news monitoring, SEC filing alerts, credit limit reviews, and more.
 
-I built this over a weekend to explore what's possible when you apply modern AI agents to trade credit — a domain that has been largely untouched by automation compared to consumer finance.
+I built this to explore what's possible when you apply modern AI agents to trade credit — a domain that has been largely untouched by automation compared to consumer finance.
 
 **Try the live demo →** https://mycreditpilot.lovable.app
 A fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios — bankruptcies, payment issues, credit deterioration, negative news. Run the agents yourself. No signup required.
@@ -22,7 +22,7 @@ Three agents run against your accounts receivable portfolio:
 | **News Monitor** | Web news via Tavily | Finds negative news about customers, classifies severity with Claude, sends internal alerts, proposes credit reviews for high/critical findings |
 | **SEC Filing Monitor** | EDGAR filings | Monitors 10-K/10-Q/8-K for going concern warnings, covenant breaches, management changes |
 
-Agents write their findings and composed messages to a Supabase database. A web UI shows what the agents found, renders the messages they composed, and lets a human approve or reject proposed actions.
+Agents write their findings and compose messages to a Supabase database. A web UI shows what the agents found, renders the messages they composed, and lets a human approve or reject proposed actions.
 
 No email provider required. No Teams webhook required. Messages are stored in the database and shown in the UI — external delivery is optional.
 
@@ -109,7 +109,7 @@ creditpilot/
 
 Agents are built from reusable skills — composable functions that do one thing well. Skills live in supabase/functions/_shared/skills/ and are called by multiple agents.
 
-With a poor prompt you get a poor response. With poor skills you get poor agents. The quality of your agents is a direct reflection of the domain expertise encoded in their skills.
+With a poor prompt, you get a poor response. With poor skills, you get poor agents. The quality of your agents is a direct reflection of the domain expertise encoded in their skills.
 
 Current skills embedded in agents (extraction in progress):
 - analyse-payment-behaviour
