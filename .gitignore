@@ -23,6 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# Bun (project uses npm)
+bun.lock
+bun.lockb
+
 # Environment variables
 .env
 .env.local
