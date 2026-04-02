@@ -101,7 +101,7 @@ export default function Demo() {
   });
 
   useEffect(() => {
-    if (latestRun?.run_id) setLatestRunId(latestRun.run_id);
+    if (latestRun?.id) setLatestRunId(latestRun.id);
   }, [latestRun]);
 
   // Fetch last run per agent
@@ -141,7 +141,7 @@ export default function Demo() {
     if (agentLastRuns) {
       for (const agent of AGENTS) {
         const run = agentLastRuns[agent.name];
-        if (run?.run_id) map[agent.name] = run.run_id;
+        if (run?.id) map[agent.name] = run.id;
       }
     }
     return map;
