@@ -150,8 +150,6 @@ export default function Demo() {
   // Filtered views based on selectedAgent, current session agents, and latest run per agent
   const messages = (allMessages ?? []).filter(
     (m: any) =>
-      sessionActivated &&
-      isSessionAgentVisible(m.agent_name) &&
       (selectedAgent === "all" || m.agent_name === selectedAgent) &&
       latestRunIdPerAgent[m.agent_name] === m.run_id
   );
