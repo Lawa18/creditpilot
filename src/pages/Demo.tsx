@@ -151,7 +151,8 @@ export default function Demo() {
   const messages = (allMessages ?? []).filter(
     (m: any) =>
       (selectedAgent === "all" || m.agent_name === selectedAgent) &&
-      latestRunIdPerAgent[m.agent_name] === m.run_id
+      latestRunIdPerAgent[m.agent_name] === m.run_id &&
+      (sessionActivated ? isSessionAgentVisible(m.agent_name) : false)
   );
 
   // Pending actions (all, not just latest run)
@@ -321,6 +322,7 @@ export default function Demo() {
 
     const revealCachedResults = async (message: string) => {
       activateSession(agent.name);
+      queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       setRevealCached(true);
       toast.info(message, { duration: 5000 });
       await Promise.all([
@@ -355,6 +357,7 @@ export default function Demo() {
       }
 
       activateSession(agent.name);
+      queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       if ((data as { run_id?: string } | null)?.run_id) {
         setLatestRunId((data as { run_id: string }).run_id);
       }
