@@ -151,7 +151,6 @@ export default function Demo() {
   const messages = (allMessages ?? []).filter(
     (m: any) =>
       (selectedAgent === "all" || m.agent_name === selectedAgent) &&
-      latestRunIdPerAgent[m.agent_name] === m.run_id &&
       (sessionActivated ? isSessionAgentVisible(m.agent_name) : false)
   );
 
