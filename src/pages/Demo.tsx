@@ -170,7 +170,6 @@ export default function Demo() {
     (a: any) =>
       a.status === "pending" &&
       sessionActivated &&
-      isSessionAgentVisible(a.agent_name) &&
       (selectedAgent === "all" || a.agent_name === selectedAgent)
   );
   const pendingCount = filteredPending.length;
