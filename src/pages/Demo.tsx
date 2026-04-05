@@ -355,6 +355,7 @@ export default function Demo() {
       }
 
       activateSession(agent.name);
+      finishLaunch();
       queryClient.invalidateQueries({ queryKey: ["agent-last-runs"] });
       if ((data as { run_id?: string } | null)?.run_id) {
         setLatestRunId((data as { run_id: string }).run_id);
