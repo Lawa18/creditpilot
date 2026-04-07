@@ -151,6 +151,7 @@ export default function Demo() {
   const messages = (allMessages ?? []).filter(
     (m: any) =>
       sessionActivated &&
+      isSessionAgentVisible(m.agent_name) &&
       (selectedAgent === "all" || m.agent_name === selectedAgent)
   );
 
@@ -170,6 +171,7 @@ export default function Demo() {
     (a: any) =>
       a.status === "pending" &&
       sessionActivated &&
+      isSessionAgentVisible(a.agent_name) &&
       (selectedAgent === "all" || a.agent_name === selectedAgent)
   );
   const pendingCount = filteredPending.length;
