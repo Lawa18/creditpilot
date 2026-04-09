@@ -39,13 +39,9 @@ export default function ActivityFeed() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  // Only show pending actions banner if visitor has an active demo session
-  const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
-
   const { data: pendingCount } = useQuery({
-    queryKey: ["pending-actions-count", hasActiveSession],
+    queryKey: ["pending-actions-count"],
     queryFn: async () => {
-      if (!hasActiveSession) return 0;
       const { count } = await supabase
         .from("pending_actions")
         .select("*", { count: "exact", head: true })
@@ -57,16 +53,26 @@ export default function ActivityFeed() {
   const { data: agentStats, isLoading: statsLoading } = useQuery({
     queryKey: ["agent-stats"],
     queryFn: async () => {
-      const { data } = await supabase.from("credit_actions").select("agent_name, created_at, action_date");
+      const { data } = await supabase
+        .from("agent_runs")
+        .select("agent_name, started_at, status, messages_composed, actions_taken")
+        .eq("status", "completed")
+        .order("started_at", { ascending: false });
+
       const now = new Date();
       const today = now.toISOString().split("T")[0];
       const agents = ["news_monitor_agent", "ar_aging_agent", "sec_monitor_agent"];
+
       return agents.map((name) => {
         const rows = (data ?? []).filter((r) => r.agent_name === name);
-        const last = rows.sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-        const todayCount = rows.filter((r) => r.action_date === today).length;
-        const isActive = last ? now.getTime() - new Date(last.created_at).getTime() < 86400000 : false;
-        return { name, last: last?.created_at, todayCount, isActive };
+        const last = rows[0];
+        const todayActions = rows
+          .filter((r) => r.started_at?.startsWith(today))
+          .reduce((sum, r) => sum + (r.actions_taken ?? 0), 0);
+        const isActive = last
+          ? now.getTime() - new Date(last.started_at).getTime() < 86400000
+          : false;
+        return { name, last: last?.started_at, todayCount: todayActions, isActive };
       });
     },
   });
@@ -74,10 +80,11 @@ export default function ActivityFeed() {
   const { data: feedItems, isLoading: feedLoading } = useQuery({
     queryKey: ["activity-feed"],
     queryFn: async () => {
-      const [newsRes, secRes, actionsRes] = await Promise.all([
+      const [newsRes, secRes, actionsRes, msgsRes] = await Promise.all([
         supabase.from("negative_news").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
         supabase.from("sec_filings").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(50),
         supabase.from("credit_actions").select("*, customers!inner(company_name, ticker)").not("agent_name", "is", null).order("created_at", { ascending: false }).limit(200),
+        supabase.from("agent_messages").select("*, customers(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
       ]);
       const items: FeedItem[] = [];
       (newsRes.data ?? []).forEach((n: any) => items.push({
@@ -93,6 +100,18 @@ export default function ActivityFeed() {
       (actionsRes.data ?? []).forEach((a: any) => items.push({
         id: `action-${a.id}`, type: "action", agent_name: a.agent_name, company_name: a.customers.company_name,
         ticker: a.customers.ticker, title: a.action_type.replace(/_/g, " "), detail: a.description, created_at: a.created_at,
+        severity: null,
+      }));
+      (msgsRes.data ?? []).forEach((m: any) => items.push({
+        id: `msg-${m.id}`,
+        type: m.template_type === "news_alert" ? "news" : m.template_type === "sec_alert" ? "sec" : "action",
+        agent_name: m.agent_name,
+        company_name: m.customers?.company_name ?? m.recipient_name,
+        ticker: m.customers?.ticker ?? null,
+        title: m.subject,
+        detail: m.body?.substring(0, 200),
+        created_at: m.created_at,
+        reviewed: false,
         severity: null,
       }));
       return items.sort((a, b) => b.created_at.localeCompare(a.created_at));
