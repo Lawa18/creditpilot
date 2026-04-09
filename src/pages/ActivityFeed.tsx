@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AgentPill } from "@/components/AgentPill";
 import { SeverityBadge } from "@/components/SeverityBadge";
-import { getAgentConfig } from "@/lib/constants";
+import { getAgentConfig, DEMO_MODE } from "@/lib/constants";
 import { relativeTime } from "@/lib/format";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { cn } from "@/lib/utils";
@@ -49,6 +49,9 @@ export default function ActivityFeed() {
       return count ?? 0;
     },
   });
+
+  const hasActiveSession = sessionStorage.getItem('demo_activated') === 'true';
+  const showPendingBanner = DEMO_MODE ? (hasActiveSession && (pendingCount ?? 0) > 0) : (pendingCount ?? 0) > 0;
 
   const { data: agentStats, isLoading: statsLoading } = useQuery({
     queryKey: ["agent-stats"],
@@ -148,7 +151,7 @@ export default function ActivityFeed() {
       <h1 className="text-xl font-semibold text-foreground">Activity Feed</h1>
 
       {/* Pending Actions Banner */}
-      {pendingCount != null && pendingCount > 0 && (
+      {showPendingBanner && (
         <div className="flex items-center gap-3 bg-agent-aging/10 border border-agent-aging/30 rounded-xl px-4 py-3">
           <AlertTriangle className="h-4 w-4 text-agent-aging shrink-0" />
           <span className="text-sm text-foreground flex-1">

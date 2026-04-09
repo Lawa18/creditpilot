@@ -1,3 +1,5 @@
+export const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+
 export const AGENT_CONFIG = {
   news_monitor_agent: {
     label: "News Monitor",
