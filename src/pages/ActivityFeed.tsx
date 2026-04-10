@@ -56,26 +56,28 @@ export default function ActivityFeed() {
   const { data: agentStats, isLoading: statsLoading } = useQuery({
     queryKey: ["agent-stats"],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data: runs } = await supabase
         .from("agent_runs")
-        .select("agent_name, started_at, status, messages_composed, actions_taken")
+        .select("agent_name, started_at, status")
         .eq("status", "completed")
         .order("started_at", { ascending: false });
 
-      const now = new Date();
-      const today = now.toISOString().split("T")[0];
+      const { data: pending } = await supabase
+        .from("pending_actions")
+        .select("agent_name, status")
+        .eq("status", "pending");
+
       const agents = ["news_monitor_agent", "ar_aging_agent", "sec_monitor_agent"];
+      const now = new Date();
 
       return agents.map((name) => {
-        const rows = (data ?? []).filter((r) => r.agent_name === name);
-        const last = rows[0];
-        const todayActions = rows
-          .filter((r) => r.started_at?.startsWith(today))
-          .reduce((sum, r) => sum + (r.actions_taken ?? 0), 0);
+        const agentRuns = (runs ?? []).filter((r) => r.agent_name === name);
+        const last = agentRuns[0];
+        const pendingCount = (pending ?? []).filter((p) => p.agent_name === name).length;
         const isActive = last
           ? now.getTime() - new Date(last.started_at).getTime() < 86400000
           : false;
-        return { name, last: last?.started_at, todayCount: todayActions, isActive };
+        return { name, last: last?.started_at, todayCount: pendingCount, isActive };
       });
     },
   });
