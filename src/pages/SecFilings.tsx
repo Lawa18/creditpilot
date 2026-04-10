@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { DEMO_MODE } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { Badge } from "@/components/ui/badge";
@@ -74,6 +75,22 @@ export default function SecFilings() {
     if (score >= 40) return "Moderate";
     return "Low Risk";
   };
+
+  const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
+
+  if (DEMO_MODE && !hasActiveSession) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">SEC Filing Monitor Agent</h1>
+          <p className="text-xs text-muted-foreground mt-1">Run the SEC Filing Agent to see monitored customers and alerts.</p>
+        </div>
+        <div className="flex items-center justify-center h-64 border border-dashed rounded-xl text-muted-foreground text-sm">
+          No agent runs yet. Go to Live Demo and run the SEC Filing Agent to get started.
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>;
 
