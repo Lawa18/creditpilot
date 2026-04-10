@@ -42,6 +42,23 @@ export default function SecFilings() {
     },
   });
 
+  const clearAlert = useMutation({
+    mutationFn: async (customerId: string) => {
+      await supabase
+        .from("sec_monitoring")
+        .update({
+          alert_triggered: false,
+          alert_action_taken: "Alert cleared by credit manager",
+        })
+        .eq("customer_id", customerId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sec-dashboard"] });
+      queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
+      toast.success("SEC alert cleared");
+    },
+  });
+
   const alerts = (dashboard ?? []).filter((d: any) => d.alert_triggered);
 
   const getRiskColor = (score: number | null) => {
@@ -107,7 +124,14 @@ export default function SecFilings() {
                     </div>
                   )}
                   {d.alert_triggered ? (
-                    <Badge variant="destructive" className="text-[10px]">ALERT ACTIVE</Badge>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-7 text-xs"
+                      onClick={() => clearAlert.mutate(d.customer_id)}
+                    >
+                      Clear Alert
+                    </Button>
                   ) : (
                     <Badge className="bg-risk-current/15 text-risk-current border-0 text-[10px]">Clear</Badge>
                   )}
