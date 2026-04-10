@@ -434,8 +434,22 @@ export default function Demo() {
   const resetDemo = async () => {
     setResetting(true);
     try {
-      // Session-only reset: clear local UI state without touching the database
-      // This ensures other demo visitors aren't affected
+      // Reset pending actions
+      await supabase
+        .from("pending_actions")
+        .update({ status: "pending" })
+        .eq("agent_name", "ar_aging_agent");
+
+      // Reset SEC alerts
+      await supabase
+        .from("sec_monitoring")
+        .update({ alert_triggered: true })
+        .in("customer_id", [
+          "c0000001-0000-0000-0000-000000000021",
+          "c0000001-0000-0000-0000-000000000049",
+        ]);
+
+      // Clear local UI state
       setLogEntries([]);
       setLatestRunId(null);
       setRunningAgents(new Set());
@@ -452,7 +466,7 @@ export default function Demo() {
       queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
       queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
 
-      toast.success("Demo reset — ready for a fresh run");
+      toast.success("Demo reset successfully");
     } catch {
       toast.error("Failed to reset demo");
     } finally {
