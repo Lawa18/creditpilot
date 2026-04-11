@@ -134,7 +134,7 @@ export default function ArAging() {
                         <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_over_90)}</td>
                         <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_outstanding)}</td>
                         <td className="p-3 text-right font-mono tabular-nums">{formatPct(c.utilization_pct)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{c.dso ?? 0}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{c.dso_days ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
