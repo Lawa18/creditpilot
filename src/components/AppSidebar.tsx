@@ -4,6 +4,7 @@ import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { DEMO_MODE } from "@/lib/constants";
 
 const navItems = [
   { title: "Activity Feed", path: "/", icon: Zap },
@@ -19,11 +20,20 @@ export function AppSidebar() {
   const { data: badges } = useQuery({
     queryKey: ["sidebar-badges"],
     queryFn: async () => {
-      const [newsRes, secRes] = await Promise.all([
-        supabase.from("negative_news").select("id", { count: "exact", head: true }).eq("reviewed", false),
-        supabase.from("sec_filings").select("id", { count: "exact", head: true }).eq("reviewed", false),
-      ]);
-      return { news: newsRes.count ?? 0, sec: secRes.count ?? 0 };
+      const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
+
+      const newsCount = (DEMO_MODE && !hasActiveSession) ? 0 : await supabase
+        .from("negative_news")
+        .select("id", { count: "exact", head: true })
+        .eq("reviewed", false)
+        .then(({ count }) => count ?? 0);
+
+      const { count: secCount } = await supabase
+        .from("sec_filings")
+        .select("id", { count: "exact", head: true })
+        .eq("reviewed", false);
+
+      return { news: newsCount, sec: secCount ?? 0 };
     },
     refetchInterval: 30000,
   });

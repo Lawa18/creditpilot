@@ -493,6 +493,7 @@ export default function Demo() {
       queryClient.invalidateQueries({ queryKey: ["demo-pending"] });
       queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
       queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
+      queryClient.invalidateQueries({ queryKey: ["sidebar-badges"] });
 
       toast.success("Demo reset successfully");
     } catch {
