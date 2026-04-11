@@ -449,6 +449,24 @@ export default function Demo() {
           "c0000001-0000-0000-0000-000000000049",
         ]);
 
+      // Reset credit limits back to original values from pending actions
+      const { data: pendingActionsData } = await supabase
+        .from("pending_actions")
+        .select("customer_id, current_value, action_type")
+        .eq("agent_name", "ar_aging_agent")
+        .eq("action_type", "CREDIT_LIMIT_REDUCTION");
+
+      if (pendingActionsData && pendingActionsData.length > 0) {
+        for (const action of pendingActionsData) {
+          if (action.current_value != null) {
+            await supabase
+              .from("customers")
+              .update({ credit_limit: action.current_value })
+              .eq("id", action.customer_id);
+          }
+        }
+      }
+
       // Reset negative news reviewed state
       await supabase
         .from("negative_news")
