@@ -34,6 +34,7 @@ export default function ArAging() {
         .from("pending_actions")
         .select("*, customers!inner(company_name, ticker)")
         .eq("agent_name", "ar_aging_agent")
+        .eq("status", "pending")
         .order("created_at", { ascending: false })
         .limit(20);
       return data ?? [];
