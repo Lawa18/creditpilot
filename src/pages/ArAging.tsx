@@ -22,7 +22,7 @@ export default function ArAging() {
   const { data: customers, isLoading: cLoading, refetch: refetchCustomers } = useQuery({
     queryKey: ["ar-aging-customers"],
     queryFn: async () => {
-      const { data } = await supabase.from("v_ar_aging_current").select("*").order("total_ar", { ascending: false });
+      const { data } = await supabase.from("v_ar_aging_current").select("*").order("total_outstanding", { ascending: false });
       return data ?? [];
     },
   });
@@ -31,7 +31,7 @@ export default function ArAging() {
     queryKey: ["ar-aging-actions"],
     queryFn: async () => {
       const { data } = await supabase
-        .from("credit_actions")
+        .from("pending_actions")
         .select("*, customers!inner(company_name, ticker)")
         .eq("agent_name", "ar_aging_agent")
         .order("created_at", { ascending: false })
@@ -51,7 +51,7 @@ export default function ArAging() {
     setRefreshing(false);
   };
 
-  const total = Number(portfolio?.total_ar) || 1;
+  const total = Number(portfolio?.total_outstanding) || 1;
   const segments = [
     { label: "Current", value: Number(portfolio?.total_current) || 0, className: "bg-aging-current" },
     { label: "1–30", value: Number(portfolio?.total_1_30) || 0, className: "bg-aging-1-30" },
@@ -120,7 +120,7 @@ export default function ArAging() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {(customers ?? []).filter(c => Number(c.total_ar) > 0).map((c: any) => (
+                    {(customers ?? []).filter(c => Number(c.total_outstanding) > 0).map((c: any) => (
                       <tr key={c.id} className="hover:bg-secondary/30">
                         <td className="p-3">
                           <span className="font-medium text-foreground">{c.company_name}</span>
@@ -128,11 +128,11 @@ export default function ArAging() {
                         </td>
                         <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
                         <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.current_amount)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_1_30)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_31_60)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_61_90)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.days_over_90)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_ar)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_1_30)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_31_60)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_61_90)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_over_90)}</td>
+                        <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_outstanding)}</td>
                         <td className="p-3 text-right font-mono tabular-nums">{formatPct(c.utilization_pct)}</td>
                         <td className="p-3 text-right font-mono tabular-nums">{c.dso ?? 0}</td>
                       </tr>
@@ -156,7 +156,7 @@ export default function ArAging() {
                   <p className="text-[10px] text-muted-foreground">{relativeTime(a.created_at)}</p>
                   <p className="text-xs font-medium text-foreground">{(a.customers as any).company_name}</p>
                   <p className="text-xs text-muted-foreground capitalize">{a.action_type.replace(/_/g, " ")}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{a.description}</p>
+                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{a.rationale}</p>
                 </div>
               ))
             )}
