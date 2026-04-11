@@ -449,6 +449,16 @@ export default function Demo() {
           "c0000001-0000-0000-0000-000000000049",
         ]);
 
+      // Reset negative news reviewed state
+      await supabase
+        .from("negative_news")
+        .update({
+          reviewed: false,
+          reviewed_by: null,
+          reviewed_at: null,
+        })
+        .not("id", "is", null);
+
       // Clear local UI state
       setLogEntries([]);
       setLatestRunId(null);
