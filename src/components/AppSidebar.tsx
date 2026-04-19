@@ -14,7 +14,7 @@ const navItems = [
   { title: "Customers", path: "/customers", icon: Users },
 ];
 
-const demoItem = { title: "Live Demo", path: "/demo", icon: Zap };
+const demoItem = { title: "Pending Actions", path: "/actions", icon: Zap };
 
 export function AppSidebar() {
   const { data: badges } = useQuery({
