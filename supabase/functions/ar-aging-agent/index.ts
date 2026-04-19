@@ -23,6 +23,39 @@ Deno.serve(async (req) => {
   const { triggered_by } = await req.json().catch(() => ({ triggered_by: "manual" }));
   const agent_name = "ar_aging_agent";
   const anthropic_api_key = Deno.env.get("ANTHROPIC_API_KEY");
+  const DEMO_MODE = Deno.env.get("DEMO_MODE") === "true";
+
+  // DEMO MODE: create a log entry and reset seed data, no AI calls
+  if (DEMO_MODE) {
+    const SEED_RUN_ID = "0aa07788-5801-48ad-b070-384389296dee";
+
+    // Create a new run record so the log shows activity
+    await supabase
+      .from("agent_runs")
+      .insert({
+        id: crypto.randomUUID(),
+        agent_name: "ar_aging_agent",
+        status: "completed",
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        customers_scanned: 49,
+        conditions_found: 19,
+        messages_composed: 5,
+        actions_taken: 3,
+        triggered_by: "demo",
+        summary: "Scanned 49 customers. Found 19 at risk. Composed 5 messages. 3 actions pending approval.",
+      });
+
+    // Reset pending actions back to pending status
+    await supabase
+      .from("pending_actions")
+      .update({ status: "pending" })
+      .eq("run_id", SEED_RUN_ID);
+
+    return new Response(JSON.stringify({ run_id: SEED_RUN_ID, status: "completed", demo: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // --- Rate limit check ---
   const cutoff = new Date(Date.now() - RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
@@ -48,7 +81,7 @@ Deno.serve(async (req) => {
   const run_id = crypto.randomUUID();
 
   await supabase.from("agent_runs").insert({
-    run_id,
+    id: run_id,
     agent_name,
     status: "running",
     started_at: new Date().toISOString(),
@@ -63,7 +96,7 @@ Deno.serve(async (req) => {
     const { data: customers } = await supabase
       .from("v_ar_aging_current")
       .select("*")
-      .order("total_ar", { ascending: false });
+      .order("total_outstanding", { ascending: false });
 
     // Get credit metrics for Altman Z zones
     const { data: creditMetrics } = await supabase
@@ -86,9 +119,14 @@ Deno.serve(async (req) => {
 
     // Find at-risk customers
     const atRisk = (customers ?? []).filter(
-      (c: any) => (c.days_over_90 ?? 0) > 0 || (c.utilization_pct ?? 0) > 80
+      (c: any) => (c.bucket_over_90 ?? 0) > 0 || (c.utilization_pct ?? 0) > 80
     );
     conditionsFound = atRisk.length;
+
+    // Calculate total portfolio for concentration check
+    const totalPortfolio = (customers ?? []).reduce(
+      (sum: number, c: any) => sum + (Number(c.total_outstanding) || 0), 0
+    );
 
     // Process top 5 at-risk customers
     for (const cust of atRisk.slice(0, 5)) {
@@ -105,19 +143,105 @@ Deno.serve(async (req) => {
 
       const behaviour = analysePaymentBehaviour(transactions ?? []);
 
+      // Determine severity and event types for credit_events
+      const creditRatingScore = cust.credit_rating_score ?? null;
+      const creditRatingSource = cust.credit_rating_source ?? null;
+      const creditRatingRaw = cust.credit_rating_raw ?? null;
+
+      const overdueBuckets: string[] = [];
+      if ((cust.bucket_1_30 ?? 0) > 0) overdueBuckets.push("OVERDUE_BUCKET_1_30");
+      if ((cust.bucket_31_60 ?? 0) > 0) overdueBuckets.push("OVERDUE_BUCKET_31_60");
+      if ((cust.bucket_61_90 ?? 0) > 0) overdueBuckets.push("OVERDUE_BUCKET_61_90");
+      if ((cust.bucket_over_90 ?? 0) > 0) overdueBuckets.push("OVERDUE_BUCKET_OVER_90");
+      if ((cust.utilization_pct ?? 0) > 95) overdueBuckets.push("CRITICAL_UTILIZATION");
+      else if ((cust.utilization_pct ?? 0) > 80) overdueBuckets.push("HIGH_UTILIZATION");
+
+      const eventSeverity = (cust.bucket_over_90 ?? 0) > 0 ? "critical"
+        : (cust.bucket_61_90 ?? 0) > 0 ? "high"
+        : (cust.bucket_31_60 ?? 0) > 0 ? "medium" : "low";
+
+      // Use most severe bucket as primary event type
+      const primaryEventType = overdueBuckets.includes("OVERDUE_BUCKET_OVER_90") ? "OVERDUE_BUCKET_OVER_90"
+        : overdueBuckets.includes("OVERDUE_BUCKET_61_90") ? "OVERDUE_BUCKET_61_90"
+        : overdueBuckets.includes("OVERDUE_BUCKET_31_60") ? "OVERDUE_BUCKET_31_60"
+        : overdueBuckets.includes("OVERDUE_BUCKET_1_30") ? "OVERDUE_BUCKET_1_30"
+        : "HIGH_UTILIZATION";
+
+      // Concentration check
+      const concentrationPct = totalPortfolio > 0
+        ? (Number(cust.total_outstanding) / totalPortfolio) * 100 : 0;
+
       // Compose dunning letter via skill (Claude API with template fallback)
       const dunningStage: 1 | 2 | 3 | 4 =
-        (cust.days_over_90 ?? 0) > 100_000 ? 4
-        : (cust.days_over_90 ?? 0) > 50_000 ? 3
-        : (cust.days_61_90 ?? 0) > 0 ? 2
+        (cust.bucket_over_90 ?? 0) > 100_000 ? 4
+        : (cust.bucket_over_90 ?? 0) > 50_000 ? 3
+        : (cust.bucket_61_90 ?? 0) > 0 ? 2
         : 1;
+
+      // Write AR aging credit event
+      await supabase.from("credit_events").insert({
+        scope: "customer",
+        customer_id: customerId,
+        event_type: primaryEventType,
+        source_agent: agent_name,
+        severity: eventSeverity,
+        signal_type: "AR_AGING",
+        title: `${cust.company_name}: ${primaryEventType.replace(/_/g, " ")}`,
+        description: `Overdue buckets: ${overdueBuckets.join(", ")}. Utilization: ${cust.utilization_pct ?? 0}%. DSO: ${cust.dso_days ?? 0} days.`,
+        payload: {
+          buckets: {
+            bucket_1_30: cust.bucket_1_30 ?? 0,
+            bucket_31_60: cust.bucket_31_60 ?? 0,
+            bucket_61_90: cust.bucket_61_90 ?? 0,
+            bucket_over_90: cust.bucket_over_90 ?? 0,
+          },
+          utilization_pct: cust.utilization_pct ?? 0,
+          dso_days: cust.dso_days ?? 0,
+          dunning_stage: dunningStage,
+          on_time_rate: behaviour.on_time_rate,
+          altman_z_zone,
+        },
+        previous_value: null,
+        new_value: cust.bucket_over_90 ?? 0,
+        value_type: "USD",
+        credit_rating_score: creditRatingScore,
+        credit_rating_raw: creditRatingRaw,
+        credit_rating_source: creditRatingSource,
+        action_required: eventSeverity === "critical" || eventSeverity === "high",
+        action_type: eventSeverity === "critical" || eventSeverity === "high" ? "CREDIT_LIMIT_REDUCTION" : null,
+        action_status: "none",
+        run_id,
+      });
+
+      // Concentration risk event if >20% of portfolio
+      if (concentrationPct > 20) {
+        await supabase.from("credit_events").insert({
+          scope: "customer",
+          customer_id: customerId,
+          event_type: "CONCENTRATION_RISK",
+          source_agent: agent_name,
+          severity: concentrationPct > 30 ? "high" : "medium",
+          signal_type: "CONCENTRATION",
+          title: `${cust.company_name}: High portfolio concentration (${concentrationPct.toFixed(1)}%)`,
+          description: `Customer represents ${concentrationPct.toFixed(1)}% of total AR portfolio.`,
+          payload: { concentration_pct: concentrationPct, total_portfolio: totalPortfolio },
+          new_value: concentrationPct,
+          value_type: "PCT",
+          credit_rating_score: creditRatingScore,
+          credit_rating_raw: creditRatingRaw,
+          credit_rating_source: creditRatingSource,
+          action_required: false,
+          action_status: "none",
+          run_id,
+        });
+      }
 
       const letter = await composeDunningLetter({
         company_name: cust.company_name,
         ticker: cust.ticker,
-        days_31_60: cust.days_31_60 ?? 0,
-        days_61_90: cust.days_61_90 ?? 0,
-        days_over_90: cust.days_over_90 ?? 0,
+        days_31_60: cust.bucket_1_30 ?? 0,
+        days_61_90: cust.bucket_61_90 ?? 0,
+        days_over_90: cust.bucket_over_90 ?? 0,
         credit_limit: cust.credit_limit ?? 0,
         utilization_pct: cust.utilization_pct ?? 0,
         on_time_rate: behaviour.on_time_rate,
@@ -126,7 +250,7 @@ Deno.serve(async (req) => {
         anthropic_api_key,
       });
 
-      await supabase.from("agent_messages").insert({
+      const { error: msgError } = await supabase.from("agent_messages").insert({
         run_id,
         agent_name,
         customer_id: customerId,
@@ -137,44 +261,52 @@ Deno.serve(async (req) => {
         recipient_email: `ap@${(cust.ticker ?? "company").toLowerCase()}.com`,
         subject: letter.subject,
         body: letter.body,
-        status: "composed",
+        status: "draft",
       });
-      messagesComposed++;
+      if (msgError) {
+        console.error("agent_messages insert failed:", JSON.stringify(msgError));
+      } else {
+        messagesComposed++;
+      }
 
       // Teams alert for high-exposure accounts (>$100K over 90 days)
-      if ((cust.days_over_90 ?? 0) > 100_000) {
+      if ((cust.bucket_over_90 ?? 0) > 100_000) {
         const alert = composeTeamsAlert({
           alert_type: "high_overdue_exposure",
           company_name: cust.company_name,
           ticker: cust.ticker,
           severity: altman_z_zone === "distress" ? "critical" : "high",
-          headline: `$${((cust.days_over_90 ?? 0) / 1000).toFixed(0)}K over 90 days past due`,
+          headline: `$${((cust.bucket_over_90 ?? 0) / 1000).toFixed(0)}K over 90 days past due`,
           details: `Utilization: ${cust.utilization_pct}% | DSO: ${cust.dso} days | Payment health: ${behaviour.health}`,
           metric_label: "Over 90 days",
-          metric_value: `$${((cust.days_over_90 ?? 0) / 1000).toFixed(0)}K`,
+          metric_value: `$${((cust.bucket_over_90 ?? 0) / 1000).toFixed(0)}K`,
           recommended_action: "Immediate review and potential credit limit reduction.",
         });
 
-        await supabase.from("agent_messages").insert({
+        const { error: teamsError } = await supabase.from("agent_messages").insert({
           run_id,
           agent_name,
           customer_id: customerId,
           channel: "teams",
           template_type: "internal_alert",
-          recipient_type: "internal",
+          recipient_type: "credit_committee",
           recipient_name: "Credit Risk Team",
           subject: alert.subject,
           body: alert.body,
-          status: "composed",
+          status: "draft",
         });
-        messagesComposed++;
+        if (teamsError) {
+          console.error("agent_messages insert failed:", JSON.stringify(teamsError));
+        } else {
+          messagesComposed++;
+        }
       }
 
       // Credit limit proposal via skill
       const proposal = calculateCreditLimitProposal({
         current_limit: cust.credit_limit ?? 0,
         current_exposure: cust.current_exposure ?? 0,
-        days_over_90: cust.days_over_90 ?? 0,
+        days_over_90: cust.bucket_over_90 ?? 0,
         utilization_pct: cust.utilization_pct ?? 0,
         altman_z_zone,
         on_time_rate: behaviour.on_time_rate,
@@ -203,7 +335,7 @@ Deno.serve(async (req) => {
       messages_composed: messagesComposed,
       actions_taken: actionsTaken,
       summary: `Scanned ${scanned} customers. Found ${conditionsFound} at risk. Composed ${messagesComposed} messages. ${actionsTaken} actions pending approval.`,
-    }).eq("run_id", run_id);
+    }).eq("id", run_id);
 
     return new Response(JSON.stringify({ run_id, status: "completed" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -213,7 +345,7 @@ Deno.serve(async (req) => {
       status: "failed",
       completed_at: new Date().toISOString(),
       summary: `Error: ${(err as Error).message}`,
-    }).eq("run_id", run_id);
+    }).eq("id", run_id);
 
     return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,

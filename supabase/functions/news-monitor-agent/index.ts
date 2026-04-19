@@ -8,6 +8,7 @@ const corsHeaders = {
 };
 
 const RATE_LIMIT_MINUTES = 60;
+const DEMO_MODE_SEED_RUN_ID = "f933f002-acbc-4225-9b3d-22be4405a3d6";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -19,12 +20,39 @@ Deno.serve(async (req) => {
 
   const { triggered_by } = await req.json().catch(() => ({ triggered_by: "manual" }));
   const agent_name = "news_monitor_agent";
+  const DEMO_MODE = Deno.env.get("DEMO_MODE") === "true";
+
+  // DEMO MODE: before rate limit check
+  if (DEMO_MODE) {
+    const SEED_RUN_ID = "cfab84c3-2a44-4c60-97a1-c0dbe50d1015";
+
+    // Create a new run record so the log shows activity
+    await supabase
+      .from("agent_runs")
+      .insert({
+        id: crypto.randomUUID(),
+        agent_name: "news_monitor_agent",
+        status: "completed",
+        started_at: new Date().toISOString(),
+        completed_at: new Date().toISOString(),
+        customers_scanned: 28,
+        conditions_found: 25,
+        messages_composed: 5,
+        actions_taken: 0,
+        triggered_by: "demo",
+        summary: "Scanned 28 unreviewed news items. Found 25 critical/high alerts. Composed 5 notifications.",
+      });
+
+    return new Response(JSON.stringify({ run_id: SEED_RUN_ID, status: "completed", demo: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
   // --- Rate limit check ---
   const cutoff = new Date(Date.now() - RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
   const { data: recentRuns } = await supabase
     .from("agent_runs")
-    .select("run_id, started_at, status")
+    .select("id, started_at, status")
     .eq("agent_name", agent_name)
     .gte("started_at", cutoff)
     .in("status", ["completed", "running"])
@@ -44,7 +72,7 @@ Deno.serve(async (req) => {
   const run_id = crypto.randomUUID();
 
   await supabase.from("agent_runs").insert({
-    run_id,
+    id: run_id,
     agent_name,
     status: "running",
     started_at: new Date().toISOString(),
@@ -78,19 +106,43 @@ Deno.serve(async (req) => {
         recommended_action: `Review and assess credit impact for ${cust?.company_name} (${cust?.ticker}).`,
       });
 
-      await supabase.from("agent_messages").insert({
+      const { error: msgError } = await supabase.from("agent_messages").insert({
         run_id,
         agent_name,
         customer_id: item.customer_id,
         channel: "teams",
         template_type: "news_alert",
-        recipient_type: "internal",
+        recipient_type: "credit_committee",
         recipient_name: "Credit Risk Team",
         subject: alert.subject,
         body: alert.body,
-        status: "composed",
+        status: "draft",
       });
-      messagesComposed++;
+      if (!msgError) messagesComposed++;
+
+      // Write credit event for this news item
+      await supabase.from("credit_events").insert({
+        scope: "customer",
+        customer_id: item.customer_id,
+        event_type: item.severity === "critical" ? "NEGATIVE_NEWS_CRITICAL"
+          : item.severity === "high" ? "NEGATIVE_NEWS_HIGH"
+          : "NEGATIVE_NEWS_MEDIUM",
+        source_agent: agent_name,
+        severity: item.severity as "critical" | "high" | "medium" | "low" | "info",
+        signal_type: "NEGATIVE_NEWS",
+        title: `${cust?.company_name ?? "Unknown"}: ${item.headline}`,
+        description: item.summary,
+        payload: {
+          headline: item.headline,
+          source: item.source,
+          news_date: item.news_date,
+          category: item.category,
+          sentiment_score: item.sentiment_score,
+          company_type: "public",
+          triggers: [item.category ?? "negative_news", `severity_${item.severity}`],
+        },
+        run_id,
+      });
     }
 
     await supabase.from("agent_runs").update({
@@ -101,7 +153,7 @@ Deno.serve(async (req) => {
       messages_composed: messagesComposed,
       actions_taken: 0,
       summary: `Scanned ${scanned} unreviewed news items. Found ${conditionsFound} critical/high alerts. Composed ${messagesComposed} notifications.`,
-    }).eq("run_id", run_id);
+    }).eq("id", run_id);
 
     return new Response(JSON.stringify({ run_id, status: "completed" }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -111,7 +163,7 @@ Deno.serve(async (req) => {
       status: "failed",
       completed_at: new Date().toISOString(),
       summary: `Error: ${(err as Error).message}`,
-    }).eq("run_id", run_id);
+    }).eq("id", run_id);
 
     return new Response(JSON.stringify({ error: (err as Error).message }), {
       status: 500,
