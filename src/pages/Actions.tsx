@@ -165,13 +165,13 @@ export default function Actions() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-48">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Pending Actions</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Recent credit signals and AI-recommended actions awaiting approval.
+            Recent credit events and AI-recommended actions awaiting approval.
           </p>
         </div>
         <AlertDialog>
@@ -203,69 +203,7 @@ export default function Actions() {
         </AlertDialog>
       </div>
 
-      {/* Credit Events */}
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-          Recent Credit Events
-        </h2>
-        <div className="bg-card rounded-xl border overflow-hidden">
-          {eventsLoading ? (
-            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading signals…
-            </div>
-          ) : !creditEvents || creditEvents.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
-              No credit signals in the last 24 hours.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-secondary/50">
-                <tr className="text-xs text-muted-foreground">
-                  <th className="text-left p-3 font-medium">Severity</th>
-                  <th className="text-left p-3 font-medium">Customer</th>
-                  <th className="text-left p-3 font-medium">Event</th>
-                  <th className="text-left p-3 font-medium">Agent</th>
-                  <th className="text-left p-3 font-medium">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {(creditEvents as any[]).map((evt) => {
-                  const cust = evt.customers;
-                  return (
-                    <tr key={evt.id} className="hover:bg-secondary/30 transition-colors">
-                      <td className="p-3">
-                        <SeverityBadge severity={evt.severity} />
-                      </td>
-                      <td className="p-3">
-                        <span className="font-medium text-xs">{cust?.company_name ?? "—"}</span>
-                        {cust?.ticker && (
-                          <span className="text-muted-foreground text-[10px] ml-1.5">{cust.ticker}</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-xs max-w-xs">
-                        <span className="font-mono text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-                          {evt.event_type}
-                        </span>
-                        {evt.title && (
-                          <p className="text-foreground mt-0.5 truncate max-w-[220px]">{evt.title}</p>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <AgentPill agentName={evt.source_agent} />
-                      </td>
-                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {relativeTime(evt.created_at)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-
-      {/* Pending Actions */}
+      {/* Pending Actions — first */}
       <div>
         <div className="flex items-center gap-2 mb-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -371,6 +309,68 @@ export default function Actions() {
             })}
           </div>
         )}
+      </div>
+
+      {/* Recent Credit Events */}
+      <div>
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+          Recent Credit Events
+        </h2>
+        <div className="bg-card rounded-xl border overflow-hidden">
+          {eventsLoading ? (
+            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading signals…
+            </div>
+          ) : !creditEvents || creditEvents.length === 0 ? (
+            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
+              No credit signals in the last 24 hours.
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/50">
+                <tr className="text-xs text-muted-foreground">
+                  <th className="text-left p-3 font-medium">Severity</th>
+                  <th className="text-left p-3 font-medium">Customer</th>
+                  <th className="text-left p-3 font-medium">Event</th>
+                  <th className="text-left p-3 font-medium">Agent</th>
+                  <th className="text-left p-3 font-medium">Time</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(creditEvents as any[]).map((evt) => {
+                  const cust = evt.customers;
+                  return (
+                    <tr key={evt.id} className="hover:bg-secondary/30 transition-colors">
+                      <td className="p-3">
+                        <SeverityBadge severity={evt.severity} />
+                      </td>
+                      <td className="p-3">
+                        <span className="font-medium text-xs">{cust?.company_name ?? "—"}</span>
+                        {cust?.ticker && (
+                          <span className="text-muted-foreground text-[10px] ml-1.5">{cust.ticker}</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-xs max-w-xs">
+                        <span className="font-mono text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
+                          {evt.event_type}
+                        </span>
+                        {evt.title && (
+                          <p className="text-foreground mt-0.5 truncate max-w-[220px]">{evt.title}</p>
+                        )}
+                      </td>
+                      <td className="p-3">
+                        <AgentPill agentName={evt.source_agent} />
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {relativeTime(evt.created_at)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
       </div>
     </div>
   );
