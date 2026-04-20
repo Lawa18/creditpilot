@@ -114,28 +114,33 @@ export default function Actions() {
   });
 
   // ── Reset Demo ──────────────────────────────────────────────────────────────
+  const SEED_PENDING_IDS = [
+    "a0000001-0000-0000-0000-000000000001",
+    "a0000001-0000-0000-0000-000000000002",
+    "a0000001-0000-0000-0000-000000000003",
+  ];
+  const SEED_CREDIT_LIMITS = [
+    { id: "c0000001-0000-0000-0000-000000000029", limit: 3000000 },
+    { id: "c0000001-0000-0000-0000-000000000008", limit: 4500000 },
+    { id: "c0000001-0000-0000-0000-000000000005", limit: 5000000 },
+  ];
+
   const resetDemo = async () => {
     setResetting(true);
     try {
-      await supabase.from("pending_actions").update({ status: "pending" }).eq("agent_name", "ar_aging_agent");
+      // Reset seed pending actions back to pending
+      await supabase.from("pending_actions").update({ status: "pending", reviewed_by: null, reviewed_at: null, review_note: null }).in("id", SEED_PENDING_IDS);
+
+      // Reset credit limits for the 3 seed customers
+      for (const { id, limit } of SEED_CREDIT_LIMITS) {
+        await supabase.from("customers").update({ credit_limit: limit }).eq("id", id);
+      }
+
+      // Reset SEC alerts
       await supabase.from("sec_monitoring").update({ alert_triggered: true }).in("customer_id", [
         "c0000001-0000-0000-0000-000000000021",
         "c0000001-0000-0000-0000-000000000049",
       ]);
-
-      const { data: paData } = await supabase
-        .from("pending_actions")
-        .select("customer_id, current_value, action_type")
-        .eq("agent_name", "ar_aging_agent")
-        .eq("action_type", "CREDIT_LIMIT_REDUCTION");
-
-      if (paData) {
-        for (const action of paData) {
-          if (action.current_value != null) {
-            await supabase.from("customers").update({ credit_limit: action.current_value }).eq("id", action.customer_id);
-          }
-        }
-      }
 
       await supabase.from("negative_news").update({ reviewed: false, reviewed_by: null, reviewed_at: null }).not("id", "is", null);
 
