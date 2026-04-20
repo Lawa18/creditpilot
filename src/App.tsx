@@ -67,8 +67,9 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route element={<SidebarLayout />}>
-            <Route path="/" element={<ActivityFeed />} />
+            <Route path="/" element={<Navigate to="/actions" replace />} />
             <Route path="/actions" element={<Actions />} />
+            <Route path="/feed" element={<ActivityFeed />} />
             <Route path="/demo" element={<Navigate to="/actions" replace />} />
             <Route path="/news" element={<NewsMonitor />} />
             <Route path="/aging" element={<ArAging />} />

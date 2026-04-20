@@ -33,22 +33,20 @@ export default function Actions() {
   const [rejectNote, setRejectNote] = useState("");
   const [resetting, setResetting] = useState(false);
 
-  // ── Credit Events (last 24h) ────────────────────────────────────────────────
+  // ── Credit Events ───────────────────────────────────────────────────────────
   const { data: creditEvents, isLoading: eventsLoading } = useQuery({
     queryKey: ["credit-events-recent"],
     queryFn: async () => {
-      const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data } = await supabase
         .from("credit_events")
         .select("*, customers(company_name, ticker)")
-        .gte("created_at", since)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(20);
       // Sort by severity rank desc, then created_at desc
       return (data ?? []).sort((a: any, b: any) => {
         const diff = (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0);
         return diff !== 0 ? diff : b.created_at.localeCompare(a.created_at);
-      }).slice(0, 10);
+      });
     },
     refetchInterval: 30000,
   });
@@ -203,7 +201,7 @@ export default function Actions() {
       {/* Credit Events */}
       <div>
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-          Recent Credit Signals — Last 24h
+          Recent Credit Events
         </h2>
         <div className="bg-card rounded-xl border overflow-hidden">
           {eventsLoading ? (

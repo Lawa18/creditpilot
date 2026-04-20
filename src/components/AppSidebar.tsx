@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { DEMO_MODE } from "@/lib/constants";
 
 const navItems = [
-  { title: "Activity Feed", path: "/", icon: Zap },
+  { title: "Activity Feed", path: "/feed", icon: Zap },
   { title: "News Monitor", path: "/news", icon: Newspaper, badgeKey: "news" as const },
   { title: "AR Aging", path: "/aging", icon: BarChart2 },
   { title: "SEC Filings", path: "/sec", icon: FileSearch, badgeKey: "sec" as const },
