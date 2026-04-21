@@ -27,6 +27,7 @@ type FeedItem = {
   created_at: string;
   reviewed?: boolean;
   severity?: string | null;
+  action_status?: string | null;
 };
 
 const AGENTS = ["all", "news_monitor_agent", "ar_aging_agent", "sec_monitor_agent"] as const;
@@ -85,11 +86,12 @@ export default function ActivityFeed() {
   const { data: feedItems, isLoading: feedLoading } = useQuery({
     queryKey: ["activity-feed"],
     queryFn: async () => {
-      const [newsRes, secRes, actionsRes, msgsRes] = await Promise.all([
+      const [newsRes, secRes, actionsRes, msgsRes, pendingRes] = await Promise.all([
         supabase.from("negative_news").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
         supabase.from("sec_filings").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(50),
         supabase.from("credit_actions").select("*, customers!inner(company_name, ticker)").not("agent_name", "is", null).order("created_at", { ascending: false }).limit(200),
         supabase.from("agent_messages").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
+        supabase.from("pending_actions").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
       ]);
       const items: FeedItem[] = [];
       (newsRes.data ?? []).forEach((n: any) => items.push({
@@ -118,6 +120,18 @@ export default function ActivityFeed() {
         created_at: m.created_at,
         reviewed: false,
         severity: null,
+      }));
+      (pendingRes.data ?? []).forEach((p: any) => items.push({
+        id: `pending-${p.id}`,
+        type: "action",
+        agent_name: p.agent_name,
+        company_name: p.customers?.company_name ?? "—",
+        ticker: p.customers?.ticker ?? null,
+        title: p.action_type?.replace(/_/g, " ") ?? "Action",
+        detail: p.rationale,
+        created_at: p.created_at,
+        severity: null,
+        action_status: p.status,
       }));
       return items.sort((a, b) => b.created_at.localeCompare(a.created_at));
     },
@@ -244,6 +258,15 @@ export default function ActivityFeed() {
                       )}
                       {item.severity === "critical" && (
                         <Badge variant="destructive" className="text-[10px] h-5">CRITICAL</Badge>
+                      )}
+                      {item.action_status === "pending" && (
+                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-400/30 text-[10px] h-5">Pending</Badge>
+                      )}
+                      {item.action_status === "approved" && (
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-400/30 text-[10px] h-5">Approved</Badge>
+                      )}
+                      {item.action_status === "rejected" && (
+                        <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] h-5">Rejected</Badge>
                       )}
                     </div>
                     <p className="text-sm">
