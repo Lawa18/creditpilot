@@ -117,6 +117,7 @@ Deno.serve(async (req) => {
         subject: alert.subject,
         body: alert.body,
         status: "draft",
+        is_demo: DEMO_MODE,
       });
       if (!msgError) messagesComposed++;
 
@@ -141,6 +142,7 @@ Deno.serve(async (req) => {
           company_type: "public",
           triggers: [item.category ?? "negative_news", `severity_${item.severity}`],
         },
+        is_demo: DEMO_MODE,
         run_id,
       });
     }

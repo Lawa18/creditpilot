@@ -89,7 +89,7 @@ export default function ActivityFeed() {
         supabase.from("negative_news").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
         supabase.from("sec_filings").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(50),
         supabase.from("credit_actions").select("*, customers!inner(company_name, ticker)").not("agent_name", "is", null).order("created_at", { ascending: false }).limit(200),
-        supabase.from("agent_messages").select("*, customers(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
+        supabase.from("agent_messages").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
       ]);
       const items: FeedItem[] = [];
       (newsRes.data ?? []).forEach((n: any) => items.push({

@@ -381,6 +381,7 @@ serve(async (req: Request) => {
       stale_agents: staleAgents,
     },
     action_required: false,
+    is_demo: DEMO_MODE,
     cia_processed: true,
     run_id: runId,
   });
@@ -411,6 +412,7 @@ serve(async (req: Request) => {
         action_required: maxSeverity === "critical" || maxSeverity === "high",
         action_type: maxSeverity === "critical" ? "CREDIT_LIMIT_REVIEW" : null,
         action_status: maxSeverity === "critical" ? "pending" : null,
+        is_demo: DEMO_MODE,
         cia_processed: true,
         run_id: runId,
       });

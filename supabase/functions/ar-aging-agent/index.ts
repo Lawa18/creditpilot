@@ -210,6 +210,7 @@ Deno.serve(async (req) => {
         action_required: eventSeverity === "critical" || eventSeverity === "high",
         action_type: eventSeverity === "critical" || eventSeverity === "high" ? "CREDIT_LIMIT_REDUCTION" : null,
         action_status: "none",
+        is_demo: DEMO_MODE,
         run_id,
       });
 
@@ -232,6 +233,7 @@ Deno.serve(async (req) => {
           credit_rating_source: creditRatingSource,
           action_required: false,
           action_status: "none",
+          is_demo: DEMO_MODE,
           run_id,
         });
       }
@@ -262,6 +264,7 @@ Deno.serve(async (req) => {
         subject: letter.subject,
         body: letter.body,
         status: "draft",
+        is_demo: DEMO_MODE,
       });
       if (msgError) {
         console.error("agent_messages insert failed:", JSON.stringify(msgError));
@@ -294,6 +297,7 @@ Deno.serve(async (req) => {
           subject: alert.subject,
           body: alert.body,
           status: "draft",
+          is_demo: DEMO_MODE,
         });
         if (teamsError) {
           console.error("agent_messages insert failed:", JSON.stringify(teamsError));
@@ -322,6 +326,7 @@ Deno.serve(async (req) => {
           current_value: cust.credit_limit,
           proposed_value: proposal.proposed_limit,
           status: "pending",
+          is_demo: DEMO_MODE,
         });
         actionsTaken++;
       }

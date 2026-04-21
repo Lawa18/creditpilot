@@ -108,6 +108,7 @@ Deno.serve(async (req) => {
         subject: `SEC Alert: ${item.company_name} (${item.ticker}) — Risk signals detected`,
         body: `SEC Filing Alert\nCompany: ${item.company_name} (${item.ticker})\nCIK: ${item.cik}\n\nRisk Signals: ${signals}\n\nLast 10-K: ${item.last_10k_date ?? "N/A"}\nLast 10-Q: ${item.last_10q_date ?? "N/A"}\nAlert Date: ${item.alert_date ?? "N/A"}\n\nAction Taken: ${item.alert_action_taken ?? "None"}\n\nPlease review the latest filings and assess impact on credit exposure.`,
         status: "draft",
+        is_demo: DEMO_MODE,
       });
       if (!msgError) messagesComposed++;
 
@@ -147,6 +148,7 @@ Deno.serve(async (req) => {
           triggers: riskSignals,
         },
         action_required: false,
+        is_demo: DEMO_MODE,
         run_id,
       });
     }

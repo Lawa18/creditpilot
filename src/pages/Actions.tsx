@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { DEMO_MODE } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
 import { relativeTime } from "@/lib/format";
 import { toast } from "sonner";
@@ -40,6 +41,7 @@ export default function Actions() {
       const { data } = await supabase
         .from("credit_events")
         .select("*, customers(company_name, ticker)")
+        .eq("is_demo", DEMO_MODE)
         .order("created_at", { ascending: false })
         .limit(20);
       // Sort by severity rank desc, then created_at desc
@@ -114,11 +116,6 @@ export default function Actions() {
   });
 
   // ── Reset Demo ──────────────────────────────────────────────────────────────
-  const SEED_PENDING_IDS = [
-    "a0000001-0000-0000-0000-000000000001",
-    "a0000001-0000-0000-0000-000000000002",
-    "a0000001-0000-0000-0000-000000000003",
-  ];
   const SEED_CREDIT_LIMITS = [
     { id: "c0000001-0000-0000-0000-000000000029", limit: 3000000 },
     { id: "c0000001-0000-0000-0000-000000000008", limit: 4500000 },
@@ -128,8 +125,8 @@ export default function Actions() {
   const resetDemo = async () => {
     setResetting(true);
     try {
-      // Reset seed pending actions back to pending
-      await supabase.from("pending_actions").update({ status: "pending", reviewed_by: null, reviewed_at: null, review_note: null }).in("id", SEED_PENDING_IDS);
+      // Reset all demo-tagged pending actions back to pending
+      await supabase.from("pending_actions").update({ status: "pending", reviewed_by: null, reviewed_at: null, review_note: null }).eq("is_demo", true);
 
       // Reset credit limits for the 3 seed customers
       for (const { id, limit } of SEED_CREDIT_LIMITS) {
