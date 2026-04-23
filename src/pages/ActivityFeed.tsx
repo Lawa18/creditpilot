@@ -86,10 +86,9 @@ export default function ActivityFeed() {
   const { data: feedItems, isLoading: feedLoading } = useQuery({
     queryKey: ["activity-feed"],
     queryFn: async () => {
-      const [newsRes, secRes, actionsRes, msgsRes, pendingRes] = await Promise.all([
+      const [newsRes, secRes, msgsRes, pendingRes] = await Promise.all([
         supabase.from("negative_news").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
         supabase.from("sec_filings").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(50),
-        supabase.from("credit_actions").select("*, customers!inner(company_name, ticker)").not("agent_name", "is", null).order("created_at", { ascending: false }).limit(200),
         supabase.from("agent_messages").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
         supabase.from("pending_actions").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
       ]);
@@ -103,11 +102,6 @@ export default function ActivityFeed() {
         id: `sec-${s.id}`, type: "sec", agent_name: s.agent_name, company_name: s.customers.company_name,
         ticker: s.customers.ticker, title: `${s.filing_type} Filing`, detail: s.key_findings, created_at: s.created_at,
         reviewed: s.reviewed, severity: null,
-      }));
-      (actionsRes.data ?? []).forEach((a: any) => items.push({
-        id: `action-${a.id}`, type: "action", agent_name: a.agent_name, company_name: a.customers.company_name,
-        ticker: a.customers.ticker, title: a.action_type.replace(/_/g, " "), detail: a.description, created_at: a.created_at,
-        severity: null,
       }));
       (msgsRes.data ?? []).forEach((m: any) => items.push({
         id: `msg-${m.id}`,

@@ -128,8 +128,8 @@ export default function Actions() {
       // Reset all demo-tagged pending actions back to pending
       await supabase.from("pending_actions").update({ status: "pending", reviewed_by: null, reviewed_at: null, review_note: null }).eq("is_demo", true);
 
-      // Reset all demo-tagged agent messages back to draft
-      await supabase.from("agent_messages").update({ status: "draft" }).eq("is_demo", true).in("status", ["approved", "rejected", "sent"]);
+      // Reset all demo-tagged agent messages back to pending
+      await supabase.from("agent_messages").update({ status: "pending" }).eq("is_demo", true).in("status", ["approved", "rejected", "sent", "draft"]);
 
       // Reset credit limits for the 3 seed customers
       for (const { id, limit } of SEED_CREDIT_LIMITS) {
