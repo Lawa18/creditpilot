@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { DEMO_MODE } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { AgentPill } from "@/components/AgentPill";
@@ -6,14 +6,11 @@ import { SeverityBadge } from "@/components/SeverityBadge";
 import { relativeTime } from "@/lib/format";
 import { SkeletonCard, SkeletonTable } from "@/components/SkeletonCard";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
 import { useState } from "react";
 
 export default function NewsMonitor() {
   const [search, setSearch] = useState("");
-  const queryClient = useQueryClient();
 
   const { data: news, isLoading } = useQuery({
     queryKey: ["news-monitor"],
@@ -23,18 +20,6 @@ export default function NewsMonitor() {
         .select("*, customers!inner(company_name, ticker)")
         .order("news_date", { ascending: false });
       return data ?? [];
-    },
-  });
-
-  const markReviewed = useMutation({
-    mutationFn: async (id: string) => {
-      await supabase.from("negative_news").update({ reviewed: true, reviewed_by: "credit_manager", reviewed_at: new Date().toISOString() }).eq("id", id);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["news-monitor"] });
-      queryClient.invalidateQueries({ queryKey: ["sidebar-badges"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
-      toast.success("Marked as reviewed");
     },
   });
 
@@ -80,7 +65,7 @@ export default function NewsMonitor() {
           <div className="space-y-3">
             {unreviewed.map((n: any) => (
               <div key={n.id} className="bg-card rounded-lg border p-4">
-                <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <SeverityBadge severity={n.severity} />
@@ -96,9 +81,6 @@ export default function NewsMonitor() {
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{n.summary}</p>
                     {n.category && <Badge variant="secondary" className="mt-2 text-[10px]">{n.category}</Badge>}
                   </div>
-                  <Button size="sm" variant="outline" className="h-7 text-xs shrink-0" onClick={() => markReviewed.mutate(n.id)}>
-                    Mark Reviewed
-                  </Button>
                 </div>
               </div>
             ))}
@@ -122,7 +104,7 @@ export default function NewsMonitor() {
                 <th className="text-left p-3 font-medium">Category</th>
                 <th className="text-left p-3 font-medium">Severity</th>
                 <th className="text-left p-3 font-medium">Sentiment</th>
-                <th className="text-left p-3 font-medium">Reviewed</th>
+                <th className="text-left p-3 font-medium">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -135,11 +117,9 @@ export default function NewsMonitor() {
                   <td className="p-3"><SeverityBadge severity={n.severity} /></td>
                   <td className="p-3 text-xs font-mono">{n.sentiment_score?.toFixed(2)}</td>
                   <td className="p-3">
-                    {n.reviewed ? (
-                      <span className="text-risk-current text-xs">✓</span>
-                    ) : (
-                      <Button size="sm" variant="ghost" className="h-6 text-[10px] text-agent-aging" onClick={() => markReviewed.mutate(n.id)}>Review</Button>
-                    )}
+                    {n.reviewed
+                      ? <span className="text-risk-current text-xs">Reviewed</span>
+                      : <span className="text-muted-foreground text-xs">Pending</span>}
                   </td>
                 </tr>
               ))}

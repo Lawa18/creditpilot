@@ -8,7 +8,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { CIAChat } from "@/components/CIAChat";
 import { supabase } from "@/integrations/supabase/client";
 import { DEMO_MODE } from "@/lib/constants";
-import ActivityFeed from "@/pages/ActivityFeed";
+import CreditEvents from "@/pages/CreditEvents";
 import NewsMonitor from "@/pages/NewsMonitor";
 import ArAging from "@/pages/ArAging";
 import SecFilings from "@/pages/SecFilings";
@@ -67,10 +67,10 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route element={<SidebarLayout />}>
-            <Route path="/" element={<Navigate to="/actions" replace />} />
+            <Route path="/" element={<Navigate to="/events" replace />} />
+            <Route path="/events" element={<CreditEvents />} />
             <Route path="/actions" element={<Actions />} />
-            <Route path="/feed" element={<ActivityFeed />} />
-            <Route path="/demo" element={<Navigate to="/actions" replace />} />
+            <Route path="/demo" element={<Navigate to="/events" replace />} />
             <Route path="/news" element={<NewsMonitor />} />
             <Route path="/aging" element={<ArAging />} />
             <Route path="/sec" element={<SecFilings />} />

@@ -1,4 +1,4 @@
-import { Zap, Newspaper, BarChart2, FileSearch, Users } from "lucide-react";
+import { Zap, Newspaper, BarChart2, FileSearch, Users, Wrench } from "lucide-react";
 import { AboutDialog } from "@/components/AboutDialog";
 import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -7,14 +7,13 @@ import { cn } from "@/lib/utils";
 import { DEMO_MODE } from "@/lib/constants";
 
 const navItems = [
-  { title: "Activity Feed", path: "/feed", icon: Zap },
-  { title: "News Monitor", path: "/news", icon: Newspaper, badgeKey: "news" as const },
+  { title: "Credit Events", path: "/events", icon: Zap },
+  { title: "Actions", path: "/actions", icon: Wrench },
   { title: "AR Aging", path: "/aging", icon: BarChart2 },
+  { title: "News Monitor", path: "/news", icon: Newspaper, badgeKey: "news" as const },
   { title: "SEC Filings", path: "/sec", icon: FileSearch, badgeKey: "sec" as const },
   { title: "Customers", path: "/customers", icon: Users },
 ];
-
-const demoItem = { title: "Pending Actions", path: "/actions", icon: Zap };
 
 export function AppSidebar() {
   const { data: badges } = useQuery({
@@ -54,24 +53,6 @@ export function AppSidebar() {
       </div>
 
       <nav className="flex-1 p-3 space-y-0.5">
-        <NavLink
-          to={demoItem.path}
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors",
-              isActive
-                ? "bg-sidebar-accent text-sidebar-foreground font-medium"
-                : "text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-accent/50"
-            )
-          }
-        >
-          <demoItem.icon className="h-4 w-4 shrink-0" />
-          <span className="flex-1">⚡ {demoItem.title}</span>
-          <span className="w-2 h-2 rounded-full bg-risk-current animate-pulse" />
-        </NavLink>
-
-        <div className="my-2 border-t border-sidebar-border" />
-
         {navItems.map((item) => (
           <NavLink
             key={item.path}

@@ -3,7 +3,6 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DEMO_MODE } from "@/lib/constants";
 import { formatCurrency } from "@/lib/format";
-import { relativeTime } from "@/lib/format";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { Loader2, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
@@ -11,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { AgentPill } from "@/components/AgentPill";
-import { SeverityBadge } from "@/components/SeverityBadge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,34 +22,11 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 
-const SEVERITY_RANK: Record<string, number> = {
-  critical: 4, high: 3, medium: 2, low: 1, info: 0,
-};
-
 export default function Actions() {
   const queryClient = useQueryClient();
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   const [resetting, setResetting] = useState(false);
-
-  // ── Credit Events ───────────────────────────────────────────────────────────
-  const { data: creditEvents, isLoading: eventsLoading } = useQuery({
-    queryKey: ["credit-events-recent"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("credit_events")
-        .select("*, customers(company_name, ticker)")
-        .eq("is_demo", DEMO_MODE)
-        .order("created_at", { ascending: false })
-        .limit(20);
-      // Sort by severity rank desc, then created_at desc
-      return (data ?? []).sort((a: any, b: any) => {
-        const diff = (SEVERITY_RANK[b.severity] ?? 0) - (SEVERITY_RANK[a.severity] ?? 0);
-        return diff !== 0 ? diff : b.created_at.localeCompare(a.created_at);
-      });
-    },
-    refetchInterval: 30000,
-  });
 
   // ── Pending Actions ─────────────────────────────────────────────────────────
   const { data: pendingActions, refetch: refetchPending } = useQuery({
@@ -157,21 +132,14 @@ export default function Actions() {
     }
   };
 
-  const agentLabel: Record<string, string> = {
-    ar_aging_agent: "AR Aging",
-    news_monitor_agent: "News Monitor",
-    sec_monitor_agent: "SEC Monitor",
-    "cia-agent": "CIA",
-  };
-
   return (
     <div className="space-y-6 pb-48">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Pending Actions</h1>
+          <h1 className="text-xl font-semibold text-foreground">Actions</h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Recent credit events and AI-recommended actions awaiting approval.
+            AI-recommended actions awaiting your approval.
           </p>
         </div>
         <AlertDialog>
@@ -309,68 +277,6 @@ export default function Actions() {
             })}
           </div>
         )}
-      </div>
-
-      {/* Recent Credit Events */}
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
-          Recent Credit Events
-        </h2>
-        <div className="bg-card rounded-xl border overflow-hidden">
-          {eventsLoading ? (
-            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading signals…
-            </div>
-          ) : !creditEvents || creditEvents.length === 0 ? (
-            <div className="flex items-center justify-center h-24 text-muted-foreground text-sm">
-              No credit signals in the last 24 hours.
-            </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-secondary/50">
-                <tr className="text-xs text-muted-foreground">
-                  <th className="text-left p-3 font-medium">Severity</th>
-                  <th className="text-left p-3 font-medium">Customer</th>
-                  <th className="text-left p-3 font-medium">Event</th>
-                  <th className="text-left p-3 font-medium">Agent</th>
-                  <th className="text-left p-3 font-medium">Time</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {(creditEvents as any[]).map((evt) => {
-                  const cust = evt.customers;
-                  return (
-                    <tr key={evt.id} className="hover:bg-secondary/30 transition-colors">
-                      <td className="p-3">
-                        <SeverityBadge severity={evt.severity} />
-                      </td>
-                      <td className="p-3">
-                        <span className="font-medium text-xs">{cust?.company_name ?? "—"}</span>
-                        {cust?.ticker && (
-                          <span className="text-muted-foreground text-[10px] ml-1.5">{cust.ticker}</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-xs max-w-xs">
-                        <span className="font-mono text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-                          {evt.event_type}
-                        </span>
-                        {evt.title && (
-                          <p className="text-foreground mt-0.5 truncate max-w-[220px]">{evt.title}</p>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        <AgentPill agentName={evt.source_agent} />
-                      </td>
-                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
-                        {relativeTime(evt.created_at)}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
       </div>
     </div>
   );

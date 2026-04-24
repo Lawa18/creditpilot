@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { DEMO_MODE } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { SkeletonCard } from "@/components/SkeletonCard";
@@ -6,13 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Brain, ShieldAlert } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 
 export default function SecFilings() {
   const [expanded, setExpanded] = useState<string | null>(null);
-  const queryClient = useQueryClient();
 
   const { data: dashboard, isLoading } = useQuery({
     queryKey: ["sec-dashboard"],
@@ -30,34 +28,6 @@ export default function SecFilings() {
       return data ?? [];
     },
     enabled: !!expanded,
-  });
-
-  const markReviewed = useMutation({
-    mutationFn: async (id: string) => {
-      await supabase.from("sec_filings").update({ reviewed: true, reviewed_by: "credit_manager", reviewed_at: new Date().toISOString() }).eq("id", id);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sec-filings"] });
-      queryClient.invalidateQueries({ queryKey: ["sidebar-badges"] });
-      toast.success("Filing marked as reviewed");
-    },
-  });
-
-  const clearAlert = useMutation({
-    mutationFn: async (customerId: string) => {
-      await supabase
-        .from("sec_monitoring")
-        .update({
-          alert_triggered: false,
-          alert_action_taken: "Alert cleared by credit manager",
-        })
-        .eq("customer_id", customerId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sec-dashboard"] });
-      queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
-      toast.success("SEC alert cleared");
-    },
   });
 
   const alerts = (dashboard ?? []).filter((d: any) => d.alert_triggered);
@@ -141,14 +111,7 @@ export default function SecFilings() {
                     </div>
                   )}
                   {d.alert_triggered ? (
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      className="h-7 text-xs"
-                      onClick={() => clearAlert.mutate(d.customer_id)}
-                    >
-                      Clear Alert
-                    </Button>
+                    <Badge className="bg-severity-critical/15 text-severity-critical border-0 text-[10px]">Alert</Badge>
                   ) : (
                     <Badge className="bg-risk-current/15 text-risk-current border-0 text-[10px]">Clear</Badge>
                   )}
@@ -210,11 +173,9 @@ export default function SecFilings() {
                         )}
                       </div>
                       <div className="shrink-0">
-                        {f.reviewed ? (
-                          <span className="text-risk-current text-xs">✓ Reviewed</span>
-                        ) : (
-                          <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => markReviewed.mutate(f.id)}>Mark Reviewed</Button>
-                        )}
+                        {f.reviewed
+                          ? <span className="text-risk-current text-xs">Reviewed</span>
+                          : <span className="text-muted-foreground text-xs">Pending</span>}
                       </div>
                     </div>
                   );
