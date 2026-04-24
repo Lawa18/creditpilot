@@ -1,13 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AgentPill } from "@/components/AgentPill";
-import { SeverityBadge } from "@/components/SeverityBadge";
 import { getAgentConfig, DEMO_MODE } from "@/lib/constants";
 import { relativeTime } from "@/lib/format";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { toast } from "sonner";
 import { useNavigate } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,14 +28,24 @@ type FeedItem = {
   action_status?: string | null;
 };
 
-const AGENTS = ["all", "news_monitor_agent", "ar_aging_agent", "sec_monitor_agent"] as const;
+// Strip raw field-label lines (e.g. "Company: X", "CIK: X") and truncate to 120 chars
+function cleanDetail(text: string | null | undefined): string | null {
+  if (!text) return null;
+  const fieldLabel = /^[A-Z][A-Za-z\s\-]+:\s/;
+  const first = text
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 10 && !fieldLabel.test(l));
+  const result = (first ?? text.split(/\n/)[0].trim()).replace(/\s+/g, " ");
+  return result.length > 120 ? result.slice(0, 117) + "…" : result || null;
+}
+
 const DATE_FILTERS = ["all", "today", "7days", "30days"] as const;
 
 export default function ActivityFeed() {
   const [agentFilter, setAgentFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
   const [unreviewedOnly, setUnreviewedOnly] = useState(false);
-  const queryClient = useQueryClient();
   const navigate = useNavigate();
 
   const { data: pendingCount } = useQuery({
@@ -46,42 +54,16 @@ export default function ActivityFeed() {
       const { count } = await supabase
         .from("pending_actions")
         .select("*", { count: "exact", head: true })
-        .eq("status", "pending");
+        .eq("status", "pending")
+        .eq("is_demo", DEMO_MODE);
       return count ?? 0;
     },
   });
 
-  const hasActiveSession = sessionStorage.getItem('demo_activated') === 'true';
-  const showPendingBanner = DEMO_MODE ? (hasActiveSession && (pendingCount ?? 0) > 0) : (pendingCount ?? 0) > 0;
-
-  const { data: agentStats, isLoading: statsLoading } = useQuery({
-    queryKey: ["agent-stats"],
-    queryFn: async () => {
-      const { data: runs } = await supabase
-        .from("agent_runs")
-        .select("agent_name, started_at, status")
-        .eq("status", "completed")
-        .order("started_at", { ascending: false });
-
-      const { data: pending } = await supabase
-        .from("pending_actions")
-        .select("agent_name, status")
-        .eq("status", "pending");
-
-      const agents = ["news_monitor_agent", "ar_aging_agent", "sec_monitor_agent"];
-      const now = new Date();
-
-      return agents.map((name) => {
-        const agentRuns = (runs ?? []).filter((r) => r.agent_name === name);
-        const last = agentRuns[0];
-        const pendingCount = (pending ?? []).filter((p) => p.agent_name === name).length;
-        const isActive = last
-          ? now.getTime() - new Date(last.started_at).getTime() < 86400000
-          : false;
-        return { name, last: last?.started_at, todayCount: pendingCount, isActive };
-      });
-    },
-  });
+  const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
+  const showPendingBanner = DEMO_MODE
+    ? hasActiveSession && (pendingCount ?? 0) > 0
+    : (pendingCount ?? 0) > 0;
 
   const { data: feedItems, isLoading: feedLoading } = useQuery({
     queryKey: ["activity-feed"],
@@ -94,14 +76,16 @@ export default function ActivityFeed() {
       ]);
       const items: FeedItem[] = [];
       (newsRes.data ?? []).forEach((n: any) => items.push({
-        id: `news-${n.id}`, type: "news", agent_name: n.agent_name, company_name: n.customers.company_name,
-        ticker: n.customers.ticker, title: n.headline, detail: n.summary, created_at: n.created_at,
-        reviewed: n.reviewed, severity: n.severity,
+        id: `news-${n.id}`, type: "news", agent_name: n.agent_name,
+        company_name: n.customers.company_name, ticker: n.customers.ticker,
+        title: n.headline, detail: cleanDetail(n.summary),
+        created_at: n.created_at, reviewed: n.reviewed, severity: n.severity,
       }));
       (secRes.data ?? []).forEach((s: any) => items.push({
-        id: `sec-${s.id}`, type: "sec", agent_name: s.agent_name, company_name: s.customers.company_name,
-        ticker: s.customers.ticker, title: `${s.filing_type} Filing`, detail: s.key_findings, created_at: s.created_at,
-        reviewed: s.reviewed, severity: null,
+        id: `sec-${s.id}`, type: "sec", agent_name: s.agent_name,
+        company_name: s.customers.company_name, ticker: s.customers.ticker,
+        title: `${s.filing_type} Filing`, detail: cleanDetail(s.key_findings),
+        created_at: s.created_at, reviewed: s.reviewed, severity: null,
       }));
       (msgsRes.data ?? []).forEach((m: any) => items.push({
         id: `msg-${m.id}`,
@@ -110,36 +94,19 @@ export default function ActivityFeed() {
         company_name: m.customers?.company_name ?? m.recipient_name,
         ticker: m.customers?.ticker ?? null,
         title: m.subject,
-        detail: m.body?.substring(0, 200),
+        detail: cleanDetail(m.body),
         created_at: m.created_at,
         reviewed: false,
         severity: null,
       }));
       (pendingRes.data ?? []).forEach((p: any) => items.push({
-        id: `pending-${p.id}`,
-        type: "action",
-        agent_name: p.agent_name,
-        company_name: p.customers?.company_name ?? "—",
-        ticker: p.customers?.ticker ?? null,
+        id: `pending-${p.id}`, type: "action", agent_name: p.agent_name,
+        company_name: p.customers?.company_name ?? "—", ticker: p.customers?.ticker ?? null,
         title: p.action_type?.replace(/_/g, " ") ?? "Action",
-        detail: p.rationale,
-        created_at: p.created_at,
-        severity: null,
-        action_status: p.status,
+        detail: cleanDetail(p.rationale),
+        created_at: p.created_at, severity: null, action_status: p.status,
       }));
       return items.sort((a, b) => b.created_at.localeCompare(a.created_at));
-    },
-  });
-
-  const markReviewed = useMutation({
-    mutationFn: async (id: string) => {
-      const realId = id.replace("news-", "");
-      await supabase.from("negative_news").update({ reviewed: true, reviewed_by: "credit_manager", reviewed_at: new Date().toISOString() }).eq("id", realId);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
-      queryClient.invalidateQueries({ queryKey: ["sidebar-badges"] });
-      toast.success("Marked as reviewed");
     },
   });
 
@@ -167,45 +134,16 @@ export default function ActivityFeed() {
           <span className="text-sm text-foreground flex-1">
             <span className="font-semibold">{pendingCount}</span> agent action{pendingCount !== 1 ? "s" : ""} require your approval
           </span>
-          <Button size="sm" variant="outline" className="h-7 text-xs border-agent-aging/30 text-agent-aging hover:bg-agent-aging/10" onClick={() => navigate("/demo")}>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs border-agent-aging/30 text-agent-aging hover:bg-agent-aging/10"
+            onClick={() => navigate("/actions")}
+          >
             Review Pending Actions →
           </Button>
         </div>
       )}
-
-      {/* Agent Status Cards */}
-      <div className="grid grid-cols-3 gap-4">
-        {statsLoading ? (
-          <>
-            <SkeletonCard />
-            <SkeletonCard />
-            <SkeletonCard />
-          </>
-        ) : (
-          agentStats?.map((agent) => {
-            const config = getAgentConfig(agent.name);
-            return (
-              <div key={agent.name} className={cn("bg-card rounded-xl border border-l-4 p-4", config.borderClass)}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-sm font-semibold text-foreground">{config.label}</span>
-                  <span className={cn("w-2 h-2 rounded-full", agent.isActive ? "bg-risk-current animate-pulse-dot" : "bg-muted-foreground/40")} />
-                </div>
-                <p className="text-[10px] font-mono text-muted-foreground mb-3">{agent.name}</p>
-                <div className="flex gap-6 text-xs">
-                  <div>
-                    <p className="text-muted-foreground">Last activity</p>
-                    <p className="font-medium text-foreground">{agent.last ? relativeTime(agent.last) : "N/A"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Today</p>
-                    <p className="font-medium text-foreground">{agent.todayCount} actions</p>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
 
       {/* Filters */}
       <div className="flex items-center gap-4 flex-wrap">
@@ -247,11 +185,11 @@ export default function ActivityFeed() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <AgentPill agentName={item.agent_name} />
-                      {item.reviewed === false && (
+                      {item.reviewed === false && item.type !== "action" && (
                         <Badge variant="outline" className="bg-agent-aging/10 text-agent-aging border-agent-aging/30 text-[10px] h-5">Needs Review</Badge>
                       )}
                       {item.severity === "critical" && (
-                        <Badge variant="destructive" className="text-[10px] h-5">CRITICAL</Badge>
+                        <Badge variant="destructive" className="text-[10px] h-5">Critical</Badge>
                       )}
                       {item.action_status === "pending" && (
                         <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-400/30 text-[10px] h-5">Pending</Badge>
@@ -269,23 +207,10 @@ export default function ActivityFeed() {
                     </p>
                     <p className="text-sm font-medium text-foreground mt-0.5 capitalize">{item.title}</p>
                     {item.detail && (
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.detail}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{item.detail}</p>
                     )}
                   </div>
-                  <div className="flex flex-col items-end gap-2 shrink-0">
-                    <span className="text-[11px] text-muted-foreground whitespace-nowrap">{relativeTime(item.created_at)}</span>
-                    {item.type === "news" && item.reviewed === false && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => markReviewed.mutate(item.id)}
-                        disabled={markReviewed.isPending}
-                      >
-                        Mark Reviewed
-                      </Button>
-                    )}
-                  </div>
+                  <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">{relativeTime(item.created_at)}</span>
                 </div>
               </div>
             );
