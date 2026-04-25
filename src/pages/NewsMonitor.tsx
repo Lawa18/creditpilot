@@ -35,11 +35,11 @@ export default function NewsMonitor() {
     return (
       <div className="space-y-6">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">News Monitor Agent</h1>
-          <p className="text-xs text-muted-foreground mt-1">Run the News Monitor Agent to see negative news alerts.</p>
+          <h1 className="text-xl font-semibold text-foreground">News Monitor</h1>
+          <p className="text-xs text-muted-foreground mt-1">Negative news alerts for monitored customers.</p>
         </div>
         <div className="flex items-center justify-center h-64 border border-dashed rounded-xl text-muted-foreground text-sm">
-          No agent runs yet. Go to Live Demo and run the News Monitor Agent to get started.
+          No news alerts found. Agents will populate this automatically.
         </div>
       </div>
     );
@@ -51,7 +51,7 @@ export default function NewsMonitor() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-foreground">News Monitor Agent</h1>
+          <h1 className="text-xl font-semibold text-foreground">News Monitor</h1>
           <p className="text-xs text-muted-foreground mt-1">
             {news?.length ?? 0} articles · <span className="text-agent-aging font-medium">{unreviewed.length} unreviewed</span>
           </p>

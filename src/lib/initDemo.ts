@@ -6,6 +6,54 @@ const SEED_CREDIT_LIMITS = [
   { id: "c0000001-0000-0000-0000-000000000005", limit: 5000000 },
 ];
 
+const SEED_NEGATIVE_NEWS = [
+  {
+    id: "n0000001-0000-0000-0000-000000000001",
+    customer_id: "c0000001-0000-0000-0000-000000000049", // Heliogen Inc
+    headline: "Heliogen liquidity concerns mount as runway shrinks",
+    summary: "Analyst report cites deteriorating cash position and risk of covenant breach in Q3.",
+    source: "Reuters",
+    news_date: "2026-04-19",
+    category: "liquidity",
+    severity: "high",
+    sentiment_score: -0.78,
+    reviewed: false,
+    reviewed_by: null,
+    reviewed_at: null,
+    agent_name: "news_monitor_agent",
+  },
+  {
+    id: "n0000001-0000-0000-0000-000000000002",
+    customer_id: "c0000001-0000-0000-0000-000000000029", // Arconic Corporation
+    headline: "Arconic placed on negative watch by Moody's",
+    summary: "Rating agency places Arconic on negative watch citing high leverage and slowing demand.",
+    source: "Bloomberg",
+    news_date: "2026-04-19",
+    category: "credit_rating",
+    severity: "high",
+    sentiment_score: -0.65,
+    reviewed: false,
+    reviewed_by: null,
+    reviewed_at: null,
+    agent_name: "news_monitor_agent",
+  },
+];
+
+const SEED_SEC_MONITORING = [
+  {
+    id: "s0000001-0000-0000-0000-000000000001",
+    customer_id: "c0000001-0000-0000-0000-000000000021", // Triumph Group
+    cik: "1021162",
+    alert_triggered: true,
+  },
+  {
+    id: "s0000001-0000-0000-0000-000000000002",
+    customer_id: "c0000001-0000-0000-0000-000000000049", // Heliogen Inc
+    cik: "1840292",
+    alert_triggered: true,
+  },
+];
+
 /**
  * Full demo reset + agent invocation.
  * Called by both the Reset Demo button (Actions.tsx) and the
@@ -28,6 +76,9 @@ export async function initDemo() {
     await supabase.from("customers").update({ credit_limit: limit }).eq("id", id);
   }
 
+  // Upsert sec_monitoring seed rows (ensures they exist), then update alert state.
+  // ignoreDuplicates=true on upsert preserves ai_risk_score/ai_summary set by agents.
+  await supabase.from("sec_monitoring").upsert(SEED_SEC_MONITORING, { ignoreDuplicates: true });
   await supabase
     .from("sec_monitoring")
     .update({ alert_triggered: true })
@@ -36,6 +87,9 @@ export async function initDemo() {
       "c0000001-0000-0000-0000-000000000049",
     ]);
 
+  // Upsert negative_news seed rows (ensures they exist and resets reviewed state),
+  // then reset reviewed state on any additional rows added by the agent.
+  await supabase.from("negative_news").upsert(SEED_NEGATIVE_NEWS);
   await supabase
     .from("negative_news")
     .update({ reviewed: false, reviewed_by: null, reviewed_at: null })
