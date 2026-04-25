@@ -34,16 +34,23 @@ export default function SecFilings() {
     queryFn: async () => {
       const { data } = await supabase
         .from("credit_events")
-        .select("customer_id, event_type")
-        .eq("agent_name", "sec_monitor_agent");
+        .select("customer_id, event_type, description, severity")
+        .eq("source_agent", "sec_monitor_agent");
       return data ?? [];
     },
   });
 
-  // Group event_type values by customer_id
-  const eventsByCustomer = (secEvents ?? []).reduce<Record<string, string[]>>((acc, e: any) => {
-    if (!acc[e.customer_id]) acc[e.customer_id] = [];
-    if (!acc[e.customer_id].includes(e.event_type)) acc[e.customer_id].push(e.event_type);
+  const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
+
+  // Group by customer_id: collect unique event_types and pick highest-severity description
+  const eventsByCustomer = (secEvents ?? []).reduce<Record<string, { types: string[]; description: string | null; bestRank: number }>>((acc, e: any) => {
+    if (!acc[e.customer_id]) acc[e.customer_id] = { types: [], description: null, bestRank: -1 };
+    if (!acc[e.customer_id].types.includes(e.event_type)) acc[e.customer_id].types.push(e.event_type);
+    const incomingRank = SEVERITY_RANK[e.severity] ?? 0;
+    if (incomingRank > acc[e.customer_id].bestRank) {
+      acc[e.customer_id].bestRank = incomingRank;
+      acc[e.customer_id].description = e.description ?? null;
+    }
     return acc;
   }, {});
 
@@ -72,7 +79,8 @@ export default function SecFilings() {
 
       <div className="space-y-4">
         {(dashboard ?? []).map((d: any) => {
-          const events = eventsByCustomer[d.customer_id] ?? [];
+          const customerEvents = eventsByCustomer[d.customer_id];
+          const events = customerEvents?.types ?? [];
           const secUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=10-K&dateb=&owner=include&count=10`;
           return (
             <div key={d.id} className="bg-card rounded-xl border overflow-hidden">
@@ -114,6 +122,13 @@ export default function SecFilings() {
                   <div><span className="text-muted-foreground">Last 10-K:</span> <span className="font-medium">{d.last_10k_date ?? "N/A"}</span></div>
                   <div><span className="text-muted-foreground">Last 10-Q:</span> <span className="font-medium">{d.last_10q_date ?? "N/A"}</span></div>
                 </div>
+
+                {/* Top credit event description */}
+                {customerEvents?.description && (
+                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
+                    {customerEvents.description.slice(0, 150)}{customerEvents.description.length > 150 ? "…" : ""}
+                  </p>
+                )}
 
                 {/* AI summary */}
                 {d.ai_summary && (
