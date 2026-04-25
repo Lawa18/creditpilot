@@ -6,8 +6,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Outlet, Navigate } from "react-router-dom";
 import { AppSidebar } from "@/components/AppSidebar";
 import { CIAChat } from "@/components/CIAChat";
-import { supabase } from "@/integrations/supabase/client";
 import { DEMO_MODE } from "@/lib/constants";
+import { initDemo } from "@/lib/initDemo";
 import CreditEvents from "@/pages/CreditEvents";
 import NewsMonitor from "@/pages/NewsMonitor";
 import ArAging from "@/pages/ArAging";
@@ -23,29 +23,11 @@ function SidebarLayout() {
     if (!DEMO_MODE) return;
     if (sessionStorage.getItem("demo_initialized") === "true") return;
 
-    const autoRun = async () => {
-      try {
-        await Promise.all([
-          supabase.functions.invoke("ar-aging-agent", { body: { triggered_by: "auto" } }),
-          supabase.functions.invoke("news-monitor-agent", { body: { triggered_by: "auto" } }),
-          supabase.functions.invoke("sec-monitor-agent", { body: { triggered_by: "auto" } }),
-        ]);
-        await supabase.functions.invoke("cia-agent", { body: {} });
-
-        sessionStorage.setItem("demo_initialized", "true");
-        sessionStorage.setItem("demo_activated", "true");
-        sessionStorage.setItem(
-          "demo_agents",
-          JSON.stringify(["ar_aging_agent", "news_monitor_agent", "sec_monitor_agent"])
-        );
-
-        queryClient.invalidateQueries();
-      } catch {
+    initDemo()
+      .then(() => queryClient.invalidateQueries())
+      .catch(() => {
         // silent — demo still works via manual run
-      }
-    };
-
-    autoRun();
+      });
   }, []);
 
   return (

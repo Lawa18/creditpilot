@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { DEMO_MODE } from "@/lib/constants";
+import { initDemo } from "@/lib/initDemo";
 import { formatCurrency } from "@/lib/format";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -113,38 +114,10 @@ export default function Actions() {
   });
 
   // ── Reset Demo ──────────────────────────────────────────────────────────────
-  const SEED_CREDIT_LIMITS = [
-    { id: "c0000001-0000-0000-0000-000000000029", limit: 3000000 },
-    { id: "c0000001-0000-0000-0000-000000000008", limit: 4500000 },
-    { id: "c0000001-0000-0000-0000-000000000005", limit: 5000000 },
-  ];
-
   const resetDemo = async () => {
     setResetting(true);
     try {
-      // Reset all demo-tagged pending actions back to pending
-      await supabase.from("pending_actions").update({ status: "pending", reviewed_by: null, reviewed_at: null, review_note: null }).eq("is_demo", true);
-
-      // Reset all demo-tagged agent messages back to pending
-      await supabase.from("agent_messages").update({ status: "pending" }).eq("is_demo", true).in("status", ["approved", "rejected", "sent", "draft"]);
-
-      // Reset credit limits for the 3 seed customers
-      for (const { id, limit } of SEED_CREDIT_LIMITS) {
-        await supabase.from("customers").update({ credit_limit: limit }).eq("id", id);
-      }
-
-      // Reset SEC alerts
-      await supabase.from("sec_monitoring").update({ alert_triggered: true }).in("customer_id", [
-        "c0000001-0000-0000-0000-000000000021",
-        "c0000001-0000-0000-0000-000000000049",
-      ]);
-
-      await supabase.from("negative_news").update({ reviewed: false, reviewed_by: null, reviewed_at: null }).not("id", "is", null);
-
-      sessionStorage.removeItem("demo_activated");
-      sessionStorage.removeItem("demo_agents");
-      sessionStorage.removeItem("demo_initialized");
-
+      await initDemo();
       queryClient.invalidateQueries();
       toast.success("Demo reset successfully");
     } catch {
