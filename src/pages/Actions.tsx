@@ -8,7 +8,7 @@ import { format } from "date-fns";
 import { Loader2, CheckCircle2, XCircle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { AgentPill } from "@/components/AgentPill";
 import {
   AlertDialog,
@@ -24,6 +24,8 @@ import {
 
 export default function Actions() {
   const queryClient = useQueryClient();
+  const [approvingId, setApprovingId] = useState<string | null>(null);
+  const [approveNote, setApproveNote] = useState("");
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   const [resetting, setResetting] = useState(false);
@@ -42,13 +44,29 @@ export default function Actions() {
     refetchInterval: 30000,
   });
 
+  // ── Completed Actions ────────────────────────────────────────────────────────
+  const { data: completedActions } = useQuery({
+    queryKey: ["actions-completed"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("pending_actions")
+        .select("*, customers(company_name, ticker)")
+        .eq("is_demo", DEMO_MODE)
+        .in("status", ["approved", "rejected"])
+        .order("reviewed_at", { ascending: false });
+      return data ?? [];
+    },
+    refetchInterval: 30000,
+  });
+
   // ── Approve ─────────────────────────────────────────────────────────────────
   const approveMutation = useMutation({
-    mutationFn: async (action: any) => {
+    mutationFn: async ({ action, note }: { action: any; note: string }) => {
       await supabase.from("pending_actions").update({
         status: "approved",
-        reviewed_by: "credit_manager",
+        reviewed_by: "demo_user",
         reviewed_at: new Date().toISOString(),
+        review_note: note || null,
       }).eq("id", action.id);
 
       if (action.action_type === "CREDIT_LIMIT_REDUCTION" && action.proposed_value != null) {
@@ -59,14 +77,17 @@ export default function Actions() {
         customer_id: action.customer_id,
         action_date: new Date().toISOString().split("T")[0],
         action_type: action.action_type,
-        description: `Approved. ${action.rationale ?? ""}`,
+        description: `Approved. ${note ? note + ". " : ""}${action.rationale ?? ""}`,
         agent_name: action.agent_name,
       });
     },
     onSuccess: () => {
       refetchPending();
       queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
+      queryClient.invalidateQueries({ queryKey: ["actions-completed"] });
       queryClient.invalidateQueries({ queryKey: ["activity-feed"] });
+      setApprovingId(null);
+      setApproveNote("");
       toast.success("Action approved");
     },
   });
@@ -76,14 +97,15 @@ export default function Actions() {
     mutationFn: async ({ id, note }: { id: string; note: string }) => {
       await supabase.from("pending_actions").update({
         status: "rejected",
-        reviewed_by: "credit_manager",
+        reviewed_by: "demo_user",
         reviewed_at: new Date().toISOString(),
-        review_note: note,
+        review_note: note || null,
       }).eq("id", id);
     },
     onSuccess: () => {
       refetchPending();
       queryClient.invalidateQueries({ queryKey: ["pending-actions-count"] });
+      queryClient.invalidateQueries({ queryKey: ["actions-completed"] });
       setRejectingId(null);
       setRejectNote("");
       toast.success("Action rejected");
@@ -171,7 +193,7 @@ export default function Actions() {
         </AlertDialog>
       </div>
 
-      {/* Pending Actions — first */}
+      {/* Pending Actions */}
       <div>
         <div className="flex items-center gap-2 mb-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -192,6 +214,8 @@ export default function Actions() {
           <div className="space-y-3">
             {(pendingActions as any[]).map((action) => {
               const cust = action.customers;
+              const isApprovingThis = approvingId === action.id;
+              const isRejectingThis = rejectingId === action.id;
               return (
                 <div key={action.id} className="bg-card rounded-xl border p-4 space-y-3 text-xs">
                   <div className="flex items-center gap-2">
@@ -224,13 +248,41 @@ export default function Actions() {
                     Created {format(new Date(action.created_at), "MMM d, HH:mm")}
                   </p>
 
-                  {rejectingId === action.id ? (
+                  {isApprovingThis ? (
                     <div className="space-y-2">
-                      <Textarea
-                        placeholder="Rejection reason..."
+                      <Input
+                        placeholder="Add a note (optional)"
+                        value={approveNote}
+                        onChange={(e) => setApproveNote(e.target.value)}
+                        className="text-xs h-8"
+                      />
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-risk-current hover:bg-risk-current/90 text-primary-foreground"
+                          onClick={() => approveMutation.mutate({ action, note: approveNote })}
+                          disabled={approveMutation.isPending}
+                        >
+                          {approveMutation.isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
+                          Confirm Approve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs"
+                          onClick={() => { setApprovingId(null); setApproveNote(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : isRejectingThis ? (
+                    <div className="space-y-2">
+                      <Input
+                        placeholder="Add a note (optional)"
                         value={rejectNote}
                         onChange={(e) => setRejectNote(e.target.value)}
-                        className="text-xs min-h-[60px]"
+                        className="text-xs h-8"
                       />
                       <div className="flex gap-2">
                         <Button
@@ -240,6 +292,7 @@ export default function Actions() {
                           onClick={() => rejectMutation.mutate({ id: action.id, note: rejectNote })}
                           disabled={rejectMutation.isPending}
                         >
+                          {rejectMutation.isPending && <Loader2 className="h-3 w-3 animate-spin mr-1" />}
                           Confirm Reject
                         </Button>
                         <Button
@@ -257,8 +310,7 @@ export default function Actions() {
                       <Button
                         size="sm"
                         className="h-7 text-xs bg-risk-current hover:bg-risk-current/90 text-primary-foreground"
-                        onClick={() => approveMutation.mutate(action)}
-                        disabled={approveMutation.isPending}
+                        onClick={() => { setApprovingId(action.id); setRejectingId(null); setRejectNote(""); }}
                       >
                         <CheckCircle2 className="h-3 w-3 mr-1" /> Approve
                       </Button>
@@ -266,7 +318,7 @@ export default function Actions() {
                         size="sm"
                         variant="outline"
                         className="h-7 text-xs text-severity-critical border-severity-critical/30"
-                        onClick={() => setRejectingId(action.id)}
+                        onClick={() => { setRejectingId(action.id); setApprovingId(null); setApproveNote(""); }}
                       >
                         <XCircle className="h-3 w-3 mr-1" /> Reject
                       </Button>
@@ -278,6 +330,65 @@ export default function Actions() {
           </div>
         )}
       </div>
+
+      {/* Completed Actions */}
+      {(completedActions?.length ?? 0) > 0 && (
+        <div>
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">
+            Completed
+          </h2>
+          <div className="bg-card rounded-xl border overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-secondary/50">
+                <tr className="text-xs text-muted-foreground">
+                  <th className="text-left p-3 font-medium">Customer</th>
+                  <th className="text-left p-3 font-medium">Action</th>
+                  <th className="text-left p-3 font-medium">Status</th>
+                  <th className="text-left p-3 font-medium">Note</th>
+                  <th className="text-left p-3 font-medium">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(completedActions as any[]).map((action) => {
+                  const cust = action.customers;
+                  return (
+                    <tr key={action.id} className="hover:bg-secondary/30 transition-colors">
+                      <td className="p-3">
+                        <span className="font-medium text-xs">{cust?.company_name ?? "—"}</span>
+                        {cust?.ticker && (
+                          <span className="text-muted-foreground text-[10px] ml-1.5">{cust.ticker}</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-xs capitalize text-muted-foreground">
+                        {action.action_type?.replace(/_/g, " ").toLowerCase()}
+                      </td>
+                      <td className="p-3">
+                        {action.status === "approved" ? (
+                          <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-400/30 text-[10px] h-5">
+                            Approved
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-destructive/10 text-destructive border-destructive/30 text-[10px] h-5">
+                            Rejected
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground max-w-[200px] truncate">
+                        {action.review_note ?? <span className="text-muted-foreground/50">—</span>}
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">
+                        {action.reviewed_at
+                          ? format(new Date(action.reviewed_at), "MMM d, HH:mm")
+                          : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
