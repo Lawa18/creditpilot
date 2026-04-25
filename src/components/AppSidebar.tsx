@@ -10,7 +10,7 @@ const navItems = [
   { title: "Credit Events", path: "/events", icon: Zap },
   { title: "Actions", path: "/actions", icon: Wrench },
   { title: "AR Aging", path: "/aging", icon: BarChart2 },
-  { title: "News Monitor", path: "/news", icon: Newspaper, badgeKey: "news" as const },
+  { title: "News Monitor", path: "/news", icon: Newspaper },
   { title: "SEC Filings", path: "/sec", icon: FileSearch, badgeKey: "sec" as const },
   { title: "Customers", path: "/customers", icon: Users },
 ];

@@ -16,7 +16,6 @@ const AGENT_TABS = [
   { value: "ar_aging_agent", label: "AR Aging" },
   { value: "news_monitor_agent", label: "News" },
   { value: "sec_monitor_agent", label: "SEC" },
-  { value: "cia-agent", label: "CIA" },
 ];
 
 export default function CreditEvents() {
