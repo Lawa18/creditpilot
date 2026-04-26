@@ -2,9 +2,16 @@
  * @skill calculate-credit-limit-proposal
  * @type analytical
  * @description Proposes a revised credit limit based on utilization, overdue balance,
- *   Altman Z-score zone, and whether the customer is a preferred account.
+ *   normalised credit score (0–100), and whether the customer is a preferred account.
  *   Enforces a minimum 25% reduction once criteria for action are met.
  *   Preferred customers receive 10pp latitude on utilization thresholds.
+ *
+ *   Credit score thresholds:
+ *     < 20  → treat as distress
+ *     20–40 → treat as grey / concern
+ *     > 40  → treat as safe
+ *     null  → use utilization and payment behaviour only
+ *
  * @input CreditLimitInput — current limit, exposure metrics, financial health indicators
  * @output CreditLimitProposal — proposed limit, reduction %, action, and rationale
  * @usedBy ar-aging-agent, credit-limit-review-agent (planned)
@@ -15,7 +22,7 @@ export interface CreditLimitInput {
   current_exposure: number;
   days_over_90: number;
   utilization_pct: number;          // 0–100
-  altman_z_zone?: "safe" | "grey" | "distress" | null;
+  credit_score?: number | null;     // 0–100 normalised score; null = unavailable
   is_preferred_customer?: boolean;
   on_time_rate?: number;            // 0–1, from payment history
 }
@@ -34,7 +41,7 @@ export function calculateCreditLimitProposal(
     current_limit,
     days_over_90,
     utilization_pct,
-    altman_z_zone = null,
+    credit_score = null,
     is_preferred_customer = false,
     on_time_rate = 1,
   } = input;
@@ -48,8 +55,9 @@ export function calculateCreditLimitProposal(
     };
   }
 
-  const inDistress = altman_z_zone === "distress";
-  const inGrey = altman_z_zone === "grey";
+  // Map normalised credit score to risk category
+  const inDistress = credit_score !== null && credit_score < 20;
+  const inGrey = credit_score !== null && credit_score >= 20 && credit_score <= 40;
   const highOverdue = days_over_90 > 50_000;
 
   // Preferred customers get 10pp latitude — thresholds are higher before action triggers
@@ -63,10 +71,10 @@ export function calculateCreditLimitProposal(
 
   if (inDistress && highOverdue) {
     reductionFactor = is_preferred_customer ? 0.40 : 0.50;
-    rationale = `Customer in financial distress zone (Altman Z) with $${(days_over_90 / 1000).toFixed(0)}K over 90 days past due. Significant limit reduction warranted.`;
+    rationale = `Customer credit score in distress range (${credit_score}) with $${(days_over_90 / 1000).toFixed(0)}K over 90 days past due. Significant limit reduction warranted.`;
   } else if (inDistress && highUtil) {
     reductionFactor = is_preferred_customer ? 0.30 : 0.40;
-    rationale = `Distress zone with ${utilization_pct}% utilization. Limit reduction to protect exposure.`;
+    rationale = `Distress credit score (${credit_score}) with ${utilization_pct}% utilization. Limit reduction to protect exposure.`;
   } else if (criticalUtil && highOverdue) {
     reductionFactor = is_preferred_customer ? 0.25 : 0.35;
     rationale = `Critical utilization (${utilization_pct}%) combined with $${(days_over_90 / 1000).toFixed(0)}K over 90 days.`;
@@ -75,7 +83,7 @@ export function calculateCreditLimitProposal(
     rationale = `High utilization (${utilization_pct}%) with $${(days_over_90 / 1000).toFixed(0)}K overdue balance.`;
   } else if (inGrey && highOverdue && on_time_rate < 0.7) {
     reductionFactor = 0.25;
-    rationale = `Grey zone with declining payment behaviour (on-time rate ${Math.round(on_time_rate * 100)}%) and overdue balance.`;
+    rationale = `Credit score in concern range (${credit_score}) with declining payment behaviour (on-time rate ${Math.round(on_time_rate * 100)}%) and overdue balance.`;
   }
 
   if (reductionFactor === 0) {

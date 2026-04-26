@@ -169,10 +169,10 @@ function normaliseValue(
       if (isNaN(num)) return { score: 50, valid: false };
       return { score: clamp((num - 1) / 9 * 100), valid: true };
 
-    // Euler Hermes: 1–6 where 1 = best → reverse: (6 - value) / 5 * 100
+    // Euler Hermes: 1–10 scale, 1 = best (reversed) → (10 - value) / 9 * 100
     case "euler_hermes":
       if (isNaN(num)) return { score: 50, valid: false };
-      return { score: clamp((6 - num) / 5 * 100), valid: true };
+      return { score: clamp((10 - num) / 9 * 100), valid: true };
 
     default:
       return { score: 50, valid: false };

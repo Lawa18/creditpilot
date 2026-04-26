@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
         current_exposure: cust.current_exposure ?? 0,
         days_over_90: cust.bucket_over_90 ?? 0,
         utilization_pct: cust.utilization_pct ?? 0,
-        altman_z_zone,
+        credit_score: creditRatingScore,
         on_time_rate: behaviour.on_time_rate,
       });
 

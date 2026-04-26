@@ -6,7 +6,7 @@ const BASE: Parameters<typeof calculateCreditLimitProposal>[0] = {
   current_exposure: 400_000,
   days_over_90: 0,
   utilization_pct: 80,
-  altman_z_zone: null,
+  credit_score: null,
   is_preferred_customer: false,
   on_time_rate: 1,
 };
@@ -28,12 +28,12 @@ describe("calculateCreditLimitProposal", () => {
     expect(result.action).toBe("no_action");
   });
 
-  it("applies 50% reduction for distress zone + high overdue (non-preferred)", () => {
+  it("applies 50% reduction for distress score + high overdue (non-preferred)", () => {
     const result = calculateCreditLimitProposal({
       ...BASE,
       days_over_90: 80_000,
       utilization_pct: 80,
-      altman_z_zone: "distress",
+      credit_score: 15, // < 20 = distress
     });
     expect(result.action).toBe("reduce");
     expect(result.reduction_pct).toBe(50);
@@ -45,7 +45,7 @@ describe("calculateCreditLimitProposal", () => {
       ...BASE,
       days_over_90: 80_000,
       utilization_pct: 80,
-      altman_z_zone: "distress",
+      credit_score: 15, // < 20 = distress
       is_preferred_customer: true,
     });
     expect(result.action).toBe("reduce");
@@ -59,13 +59,13 @@ describe("calculateCreditLimitProposal", () => {
       ...BASE,
       utilization_pct: 75,
       days_over_90: 60_000,
-      altman_z_zone: null,
+      credit_score: null,
     });
     const preferred = calculateCreditLimitProposal({
       ...BASE,
       utilization_pct: 75,
       days_over_90: 60_000,
-      altman_z_zone: null,
+      credit_score: null,
       is_preferred_customer: true,
     });
     expect(nonPreferred.action).toBe("reduce");
@@ -73,12 +73,12 @@ describe("calculateCreditLimitProposal", () => {
   });
 
   it("enforces minimum 25% reduction for non-preferred customers", () => {
-    // grey zone + high overdue + bad on_time → reductionFactor set to 0.25
+    // grey score + high overdue + bad on_time → reductionFactor set to 0.25
     const result = calculateCreditLimitProposal({
       ...BASE,
       utilization_pct: 75,
       days_over_90: 60_000,
-      altman_z_zone: "grey",
+      credit_score: 30, // 20-40 = grey
       on_time_rate: 0.5,
     });
     expect(result.action).toBe("reduce");
@@ -90,8 +90,36 @@ describe("calculateCreditLimitProposal", () => {
       ...BASE,
       days_over_90: 80_000,
       utilization_pct: 80,
-      altman_z_zone: "distress",
+      credit_score: 15,
     });
     expect(result.rationale.length).toBeGreaterThan(10);
+  });
+
+  it("credit_score null + high util + high overdue → triggers on AR metrics alone", () => {
+    const result = calculateCreditLimitProposal({
+      ...BASE,
+      utilization_pct: 80,
+      days_over_90: 80_000,
+      credit_score: null,
+    });
+    expect(result.action).toBe("reduce");
+    expect(result.reduction_pct).toBeGreaterThanOrEqual(25);
+  });
+
+  it("credit_score 50 (safe zone) + high overdue → uses AR metrics only, no distress penalty", () => {
+    const safe = calculateCreditLimitProposal({
+      ...BASE,
+      utilization_pct: 80,
+      days_over_90: 80_000,
+      credit_score: 50, // > 40 = safe, no zone penalty
+    });
+    const distress = calculateCreditLimitProposal({
+      ...BASE,
+      utilization_pct: 80,
+      days_over_90: 80_000,
+      credit_score: 10, // < 20 = distress
+    });
+    // Safe score should result in smaller reduction than distress
+    expect(safe.reduction_pct).toBeLessThan(distress.reduction_pct);
   });
 });

@@ -177,15 +177,15 @@ describe("normaliseCreditSignal", () => {
     expect(result.interpretation).toBe("very_safe");
   });
 
-  it("Euler Hermes 6 → 0 (worst rating, reverse scale)", () => {
-    const result = normaliseCreditSignal(sig("euler_hermes", 6));
+  it("Euler Hermes 10 → 0 (worst rating, reverse scale)", () => {
+    const result = normaliseCreditSignal(sig("euler_hermes", 10));
     expect(result.normalised_score).toBe(0);
     expect(result.interpretation).toBe("high_risk");
   });
 
-  it("Euler Hermes 3 → 60 (mid-scale)", () => {
+  it("Euler Hermes 3 → ~77.8 (formula: (10-3)/9*100)", () => {
     const result = normaliseCreditSignal(sig("euler_hermes", 3));
-    expect(result.normalised_score).toBe(60);
+    expect(result.normalised_score).toBeCloseTo(77.8, 1);
   });
 
   // --- Internal scores ---
