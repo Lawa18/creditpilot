@@ -1,17 +1,20 @@
 /**
  * AR Aging Agent — supabase/functions/ar-aging-agent/index.ts
  *
+ * Pure signal agent — writes credit_events only. Credit limit decisions are
+ * made by the CIA agent based on synthesised signals.
+ *
  * Scans all customers for overdue AR buckets and high credit utilisation.
- * For customers in the 61–90 day and 90+ day buckets the agent:
+ * For at-risk customers the agent:
+ *   - Writes credit events for each overdue bucket and utilization threshold
  *   - Composes staged dunning letters (stages 1–4) via the compose-dunning-letter skill
  *   - Composes Microsoft Teams alerts for accounts with >$100K over 90 days
- *   - Proposes credit limit reductions via the calculate-credit-limit-proposal skill
  *
  * Request body: { triggered_by?: string }
  * Response:     { run_id: string, status: "completed" }
  *
- * Tables read:  v_ar_aging_current, payment_transactions, credit_metrics
- * Tables written: credit_events, agent_messages, pending_actions, agent_runs
+ * Tables read:  v_ar_aging_current, payment_transactions
+ * Tables written: credit_events, agent_messages, agent_runs
  *
  * Event types emitted:
  *   OVERDUE_BUCKET_1_30 | OVERDUE_BUCKET_31_60 | OVERDUE_BUCKET_61_90 |
@@ -19,12 +22,11 @@
  *   CONCENTRATION_RISK
  *
  * Rate limit: 60 minutes between runs (HTTP 429 if exceeded).
- * Demo mode:  Returns a pre-baked run log; resets pending_actions to pending.
+ * Demo mode:  Returns a pre-baked run log. No rows written.
  *             Controlled by DEMO_MODE=true Supabase secret.
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { analysePaymentBehaviour } from "../_shared/skills/analytical/analyse-payment-behaviour.ts";
-import { calculateCreditLimitProposal } from "../_shared/skills/analytical/calculate-credit-limit-proposal.ts";
 import { composeDunningLetter } from "../_shared/skills/generative/compose-dunning-letter.ts";
 import { composeTeamsAlert } from "../_shared/skills/generative/compose-teams-alert.ts";
 
@@ -49,32 +51,22 @@ Deno.serve(async (req) => {
   const anthropic_api_key = Deno.env.get("ANTHROPIC_API_KEY");
   const DEMO_MODE = Deno.env.get("DEMO_MODE") === "true";
 
-  // DEMO MODE: create a log entry and reset seed data, no AI calls
+  // DEMO MODE: create a log entry, no AI calls
   if (DEMO_MODE) {
     const SEED_RUN_ID = "0aa07788-5801-48ad-b070-384389296dee";
 
-    // Create a new run record so the log shows activity
-    await supabase
-      .from("agent_runs")
-      .insert({
-        id: crypto.randomUUID(),
-        agent_name: "ar_aging_agent",
-        status: "completed",
-        started_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-        customers_scanned: 49,
-        conditions_found: 19,
-        messages_composed: 5,
-        actions_taken: 3,
-        triggered_by: "demo",
-        summary: "Scanned 49 customers. Found 19 at risk. Composed 5 messages. 3 actions pending approval.",
-      });
-
-    // Reset pending actions back to pending status
-    await supabase
-      .from("pending_actions")
-      .update({ status: "pending" })
-      .eq("run_id", SEED_RUN_ID);
+    await supabase.from("agent_runs").insert({
+      id: crypto.randomUUID(),
+      agent_name: "ar_aging_agent",
+      status: "completed",
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      customers_scanned: 49,
+      conditions_found: 19,
+      messages_composed: 5,
+      triggered_by: "demo",
+      summary: "Scanned 49 customers. Found 19 at risk. Composed 5 messages.",
+    });
 
     return new Response(JSON.stringify({ run_id: SEED_RUN_ID, status: "completed", demo: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -113,33 +105,15 @@ Deno.serve(async (req) => {
   });
 
   try {
-    // Clean up previous pending actions for this agent
-    await supabase.from("pending_actions").delete().eq("agent_name", agent_name).eq("status", "pending");
-
     // Get customers with AR aging data
     const { data: customers } = await supabase
       .from("v_ar_aging_current")
       .select("*")
       .order("total_outstanding", { ascending: false });
 
-    // Get credit metrics for Altman Z zones
-    const { data: creditMetrics } = await supabase
-      .from("credit_metrics")
-      .select("customer_id, altman_z_score");
-
-    const zoneMap = new Map<string, "safe" | "grey" | "distress">();
-    for (const m of creditMetrics ?? []) {
-      const z = m.altman_z_score ?? 0;
-      zoneMap.set(
-        m.customer_id,
-        z > 2.99 ? "safe" : z >= 1.81 ? "grey" : "distress"
-      );
-    }
-
     const scanned = customers?.length ?? 0;
     let conditionsFound = 0;
     let messagesComposed = 0;
-    let actionsTaken = 0;
 
     // Find at-risk customers
     const atRisk = (customers ?? []).filter(
@@ -155,7 +129,6 @@ Deno.serve(async (req) => {
     // Process top 5 at-risk customers
     for (const cust of atRisk.slice(0, 5)) {
       const customerId: string = cust.customer_id;
-      const altman_z_zone = zoneMap.get(customerId) ?? null;
 
       // Fetch payment transactions for this customer
       const { data: transactions } = await supabase
@@ -223,7 +196,7 @@ Deno.serve(async (req) => {
           dso_days: cust.dso_days ?? 0,
           dunning_stage: dunningStage,
           on_time_rate: behaviour.on_time_rate,
-          altman_z_zone,
+          altman_z_zone: null,
         },
         previous_value: null,
         new_value: cust.bucket_over_90 ?? 0,
@@ -232,7 +205,7 @@ Deno.serve(async (req) => {
         credit_rating_raw: creditRatingRaw,
         credit_rating_source: creditRatingSource,
         action_required: eventSeverity === "critical" || eventSeverity === "high",
-        action_type: eventSeverity === "critical" || eventSeverity === "high" ? "CREDIT_LIMIT_REDUCTION" : null,
+        action_type: null,
         action_status: "none",
         is_demo: DEMO_MODE,
         run_id,
@@ -256,6 +229,7 @@ Deno.serve(async (req) => {
           credit_rating_raw: creditRatingRaw,
           credit_rating_source: creditRatingSource,
           action_required: false,
+          action_type: null,
           action_status: "none",
           is_demo: DEMO_MODE,
           run_id,
@@ -302,7 +276,7 @@ Deno.serve(async (req) => {
           alert_type: "high_overdue_exposure",
           company_name: cust.company_name,
           ticker: cust.ticker,
-          severity: altman_z_zone === "distress" ? "critical" : "high",
+          severity: (creditRatingScore !== null && creditRatingScore < 20) ? "critical" : "high",
           headline: `$${((cust.bucket_over_90 ?? 0) / 1000).toFixed(0)}K over 90 days past due`,
           details: `Utilization: ${cust.utilization_pct}% | DSO: ${cust.dso} days | Payment health: ${behaviour.health}`,
           metric_label: "Over 90 days",
@@ -329,31 +303,6 @@ Deno.serve(async (req) => {
           messagesComposed++;
         }
       }
-
-      // Credit limit proposal via skill
-      const proposal = calculateCreditLimitProposal({
-        current_limit: cust.credit_limit ?? 0,
-        current_exposure: cust.current_exposure ?? 0,
-        days_over_90: cust.bucket_over_90 ?? 0,
-        utilization_pct: cust.utilization_pct ?? 0,
-        credit_score: creditRatingScore,
-        on_time_rate: behaviour.on_time_rate,
-      });
-
-      if (proposal.action === "reduce") {
-        await supabase.from("pending_actions").insert({
-          run_id,
-          agent_name,
-          customer_id: customerId,
-          action_type: "CREDIT_LIMIT_REDUCTION",
-          rationale: proposal.rationale,
-          current_value: cust.credit_limit,
-          proposed_value: proposal.proposed_limit,
-          status: "pending",
-          is_demo: DEMO_MODE,
-        });
-        actionsTaken++;
-      }
     }
 
     await supabase.from("agent_runs").update({
@@ -362,8 +311,7 @@ Deno.serve(async (req) => {
       customers_scanned: scanned,
       conditions_found: conditionsFound,
       messages_composed: messagesComposed,
-      actions_taken: actionsTaken,
-      summary: `Scanned ${scanned} customers. Found ${conditionsFound} at risk. Composed ${messagesComposed} messages. ${actionsTaken} actions pending approval.`,
+      summary: `Scanned ${scanned} customers. Found ${conditionsFound} at risk. Composed ${messagesComposed} messages.`,
     }).eq("id", run_id);
 
     return new Response(JSON.stringify({ run_id, status: "completed" }), {
