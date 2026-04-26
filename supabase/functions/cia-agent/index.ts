@@ -48,9 +48,10 @@ interface AgentRun {
 }
 
 interface CIARequest {
-  question?: string;           // optional queued question from user
-  force_refresh?: boolean;     // bypass TTL cache
-  customer_id?: string;        // scope to single customer
+  mode?: "briefing" | "question" | "suggestions";
+  question?: string;
+  force_refresh?: boolean;
+  customer_id?: string;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -58,15 +59,22 @@ interface CIARequest {
 const DEMO_SEED_RUN_ID = "cia-demo-seed-00000000-0000-0000-0000-000000000001";
 
 const CACHE_TTL: Record<string, number> = {
-  "ar-aging-agent":  24 * 60 * 60 * 1000,   // 24h
-  "news-monitor-agent": 4 * 60 * 60 * 1000, // 4h
-  "sec-monitor-agent": 48 * 60 * 60 * 1000, // 48h
+  "ar-aging-agent":  24 * 60 * 60 * 1000,
+  "news-monitor-agent": 4 * 60 * 60 * 1000,
+  "sec-monitor-agent": 48 * 60 * 60 * 1000,
 };
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+const DEMO_SUGGESTIONS = [
+  "Why is Triumph Group flagged across multiple agents?",
+  "Which customers have the highest credit risk right now?",
+  "Should I reduce Arconic's credit limit?",
+  "What's my biggest portfolio exposure today?",
+];
 
 // ─── Demo Seed Data ───────────────────────────────────────────────────────────
 
@@ -188,6 +196,13 @@ function buildUserPrompt(
   return parts.join("\n");
 }
 
+function extractText(message: Anthropic.Message): string {
+  return message.content
+    .filter(b => b.type === "text")
+    .map(b => (b as { type: "text"; text: string }).text)
+    .join("");
+}
+
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -195,16 +210,177 @@ serve(async (req: Request) => {
     return new Response("ok", { headers: CORS_HEADERS });
   }
 
-  const supabase = createClient(
+  const supabaseClient = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
   );
 
   const DEMO_MODE = Deno.env.get("DEMO_MODE") === "true";
 
-  // ── Demo mode fast-path ──────────────────────────────────────────────────
+  const jsonRes = (data: unknown, status = 200) =>
+    new Response(JSON.stringify(data), {
+      status,
+      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    });
+
+  let body: CIARequest = {};
+  try {
+    body = await req.json();
+  } catch {
+    // empty body is fine
+  }
+
+  const { mode = "briefing", question, force_refresh = false, customer_id } = body;
+
+  // ── SUGGESTIONS mode ──────────────────────────────────────────────────────
+  if (mode === "suggestions") {
+    if (DEMO_MODE) {
+      return jsonRes({ suggestions: DEMO_SUGGESTIONS });
+    }
+
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
+
+    const { data: recentEvents } = await supabaseClient
+      .from("credit_events")
+      .select("event_type, severity, source_agent, title, customers!left(company_name)")
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    const eventsText = (recentEvents ?? []).map((e: any) =>
+      `[${String(e.severity).toUpperCase()}] ${e.event_type} — ${e.title} (${e.source_agent}) — ${e.customers?.company_name ?? "Portfolio"}`
+    ).join("\n");
+
+    const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
+
+    try {
+      const message = await anthropic.messages.create({
+        model: "claude-haiku-4-5",
+        max_tokens: 200,
+        system: "You are a credit analyst assistant. Given these recent credit signals, generate exactly 4 short questions a credit manager would want to ask. Return ONLY a JSON array of 4 strings, no other text.",
+        messages: [{ role: "user", content: `Recent credit signals:\n${eventsText}` }],
+      });
+
+      const text = extractText(message);
+      const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+      const suggestions = JSON.parse(cleaned);
+      return jsonRes({ suggestions });
+    } catch {
+      return jsonRes({ suggestions: DEMO_SUGGESTIONS });
+    }
+  }
+
+  // ── QUESTION mode ──────────────────────────────────────────────────────────
+  if (mode === "question") {
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
+    if (!question) return jsonRes({ error: "question is required" }, 400);
+
+    // Extract keywords from the question (words > 4 chars, strip punctuation)
+    const keywords = question
+      .split(/\s+/)
+      .map((w: string) => w.toLowerCase().replace(/[?!.,'"]/g, ""))
+      .filter((w: string) => w.length > 4);
+
+    let events: any[] = [];
+
+    if (keywords.length > 0) {
+      const orFilter = keywords.slice(0, 3)
+        .flatMap((kw: string) => [`title.ilike.%${kw}%`, `description.ilike.%${kw}%`])
+        .join(",");
+
+      const { data: filtered } = await supabaseClient
+        .from("credit_events")
+        .select("id, event_type, severity, source_agent, title, description, created_at, customers!left(id, company_name, ticker)")
+        .or(orFilter)
+        .order("created_at", { ascending: false })
+        .limit(15);
+
+      events = filtered ?? [];
+    }
+
+    // Fall back to most recent 15 if keyword filter found < 2 results
+    if (events.length < 2) {
+      const { data: fallback } = await supabaseClient
+        .from("credit_events")
+        .select("id, event_type, severity, source_agent, title, description, created_at, customers!left(id, company_name, ticker)")
+        .order("created_at", { ascending: false })
+        .limit(15);
+      events = fallback ?? [];
+    }
+
+    const eventsContext = events
+      .sort((a: any, b: any) => severityRank(b.severity) - severityRank(a.severity))
+      .map((e: any) =>
+        [
+          `ID: ${e.id}`,
+          `Type: ${e.event_type}`,
+          `Severity: ${e.severity}`,
+          `Agent: ${e.source_agent}`,
+          `Customer: ${e.customers?.company_name ?? "Portfolio"}`,
+          `Title: ${e.title}`,
+          e.description ? `Detail: ${e.description}` : null,
+          `Date: ${e.created_at}`,
+        ]
+          .filter(Boolean)
+          .join("\n")
+      )
+      .join("\n\n");
+
+    const questionSystemPrompt = `You are a credit analyst assistant for CreditPilot. Answer the user's question based ONLY on the provided credit events.
+
+Return ONLY valid JSON in this exact shape, no other text, no markdown code fences:
+{
+  "answer": "2-3 paragraphs of analysis, markdown formatted with **bold key terms**",
+  "sources": [
+    {
+      "event_id": "uuid",
+      "customer_name": "string",
+      "event_type": "string",
+      "severity": "critical|high|medium|low|info",
+      "date": "ISO date string",
+      "agent": "string"
+    }
+  ],
+  "confidence": "High|Medium|Low",
+  "confidence_reason": "one sentence explaining confidence level"
+}
+
+Only include events in sources that directly support your answer.`;
+
+    const model = DEMO_MODE ? "claude-haiku-4-5" : "claude-sonnet-4-20250514";
+    const maxTokens = DEMO_MODE ? 600 : 800;
+
+    const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
+
+    try {
+      const message = await anthropic.messages.create({
+        model,
+        max_tokens: maxTokens,
+        system: questionSystemPrompt,
+        messages: [
+          {
+            role: "user",
+            content: `Question: ${question}\n\nCredit events:\n${eventsContext}`,
+          },
+        ],
+      });
+
+      const text = extractText(message);
+      const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+      const result = JSON.parse(cleaned);
+      return jsonRes(result);
+    } catch (err) {
+      console.error("Question mode error:", err);
+      return jsonRes({ error: "Failed to generate answer" }, 500);
+    }
+  }
+
+  // ── BRIEFING mode (default) ────────────────────────────────────────────────
+
+  // Demo fast-path
   if (DEMO_MODE) {
-    const { error: runError } = await supabase
+    const { error: runError } = await supabaseClient
       .from("agent_runs")
       .upsert({
         id: DEMO_SEED_RUN_ID,
@@ -216,48 +392,30 @@ serve(async (req: Request) => {
 
     if (runError) console.error("Demo upsert error:", runError);
 
-    return new Response(
-      JSON.stringify({
-        run_id: DEMO_SEED_RUN_ID,
-        demo: true,
-        briefing: DEMO_BRIEFING,
-        events_processed: 12,
-        stale_agents: [],
-        messages: DEMO_MESSAGES,
-      }),
-      { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-    );
-  }
-
-  // ── Live path ────────────────────────────────────────────────────────────
-
-  // Rate limit check (after demo bypass)
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+    return jsonRes({
+      run_id: DEMO_SEED_RUN_ID,
+      demo: true,
+      briefing: DEMO_BRIEFING,
+      events_processed: 12,
+      stale_agents: [],
+      messages: DEMO_MESSAGES,
     });
   }
 
-  let body: CIARequest = {};
-  try {
-    body = await req.json();
-  } catch {
-    // empty body is fine
+  // Live briefing path
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    return jsonRes({ error: "Unauthorized" }, 401);
   }
 
-  const { question, force_refresh = false, customer_id } = body;
-
   // 1. Check cache TTL per agent
-  const { data: recentRuns } = await supabase
+  const { data: recentRuns } = await supabaseClient
     .from("agent_runs")
     .select("id, agent_name, status, completed_at, created_at")
     .in("agent_name", ["ar-aging-agent", "news-monitor-agent", "sec-monitor-agent"])
     .eq("status", "completed")
     .order("completed_at", { ascending: false });
 
-  // Latest completed run per agent
   const latestByAgent: Record<string, AgentRun> = {};
   for (const run of (recentRuns ?? [])) {
     if (!latestByAgent[run.agent_name]) {
@@ -269,12 +427,8 @@ serve(async (req: Request) => {
     .filter(([agent]) => force_refresh || isStale(latestByAgent[agent] ?? null, agent))
     .map(([agent]) => agent);
 
-  // 2. Trigger stale agents (fire-and-forget — don't await, CIA proceeds with existing data)
-  // In production you'd invoke them via fetch(); for now we surface which ones are stale
-  // so the frontend can decide to show a "data may be stale" warning.
-
-  // 3. Read unprocessed credit_events
-  let eventsQuery = supabase
+  // 2. Read unprocessed credit_events
+  let eventsQuery = supabaseClient
     .from("credit_events")
     .select("*")
     .eq("cia_processed", false)
@@ -288,37 +442,28 @@ serve(async (req: Request) => {
   const { data: events, error: eventsError } = await eventsQuery;
 
   if (eventsError) {
-    return new Response(JSON.stringify({ error: eventsError.message }), {
-      status: 500,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+    return jsonRes({ error: eventsError.message }, 500);
   }
 
   if (!events || events.length === 0) {
-    return new Response(
-      JSON.stringify({
-        run_id: null,
-        briefing: "No unprocessed credit events found. All signals are up to date.",
-        events_processed: 0,
-        stale_agents: staleAgents,
-        messages: [],
-      }),
-      { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-    );
+    return jsonRes({
+      run_id: null,
+      briefing: "No unprocessed credit events found. All signals are up to date.",
+      events_processed: 0,
+      stale_agents: staleAgents,
+      messages: [],
+    });
   }
 
-  // 4. Load customer context for named references
-  const customerIds = [...new Set(events.map(e => e.customer_id).filter(Boolean))] as string[];
-  const { data: customers } = await supabase
+  // 3. Load customer context
+  const customerIds = [...new Set(events.map((e: any) => e.customer_id).filter(Boolean))] as string[];
+  const { data: customers } = await supabaseClient
     .from("customers")
     .select("id, name, ticker, company_type, credit_limit, current_balance")
     .in("id", customerIds);
 
-  // 5. Call Claude API
-  const anthropic = new Anthropic({
-    apiKey: Deno.env.get("ANTHROPIC_API_KEY")!,
-  });
-
+  // 4. Call Claude
+  const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
   const systemPrompt = buildSystemPrompt(customers ?? []);
   const userPrompt = buildUserPrompt(events as CreditEvent[], customers ?? [], question);
 
@@ -330,21 +475,14 @@ serve(async (req: Request) => {
       system: systemPrompt,
       messages: [{ role: "user", content: userPrompt }],
     });
-
-    briefing = message.content
-      .filter(b => b.type === "text")
-      .map(b => (b as { type: "text"; text: string }).text)
-      .join("\n");
+    briefing = extractText(message);
   } catch (err) {
     console.error("Anthropic API error:", err);
-    return new Response(JSON.stringify({ error: "Failed to generate briefing" }), {
-      status: 500,
-      headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
-    });
+    return jsonRes({ error: "Failed to generate briefing" }, 500);
   }
 
-  // 6. Create agent_runs record
-  const { data: runData, error: runError } = await supabase
+  // 5. Create agent_runs record
+  const { data: runData, error: runError } = await supabaseClient
     .from("agent_runs")
     .insert({
       agent_name: "cia-agent",
@@ -355,17 +493,13 @@ serve(async (req: Request) => {
     .select("id")
     .single();
 
-  if (runError) {
-    console.error("agent_runs insert error:", runError);
-  }
-
+  if (runError) console.error("agent_runs insert error:", runError);
   const runId = runData?.id ?? null;
 
-  // 7. Write CIA_ASSESSMENT events back to credit_events
+  // 6. Write CIA_ASSESSMENT events back
   const groupedEvents = groupEventsByCustomer(events as CreditEvent[]);
   const assessmentEvents = [];
 
-  // Portfolio-level daily briefing event
   assessmentEvents.push({
     scope: "portfolio",
     customer_id: null,
@@ -373,7 +507,7 @@ serve(async (req: Request) => {
     source_agent: "cia-agent",
     severity: "info" as const,
     title: "Daily Credit Intelligence Briefing",
-    description: briefing.slice(0, 500), // truncated for description field
+    description: briefing.slice(0, 500),
     payload: {
       full_briefing: briefing,
       events_synthesised: events.length,
@@ -386,16 +520,15 @@ serve(async (req: Request) => {
     run_id: runId,
   });
 
-  // Per-customer COMPOSITE_RISK events for customers with multiple signals
   for (const [custId, custEvents] of Object.entries(groupedEvents)) {
     if (custId === "__portfolio__") continue;
-    const agentsSeen = new Set(custEvents.map(e => e.source_agent));
+    const agentsSeen = new Set(custEvents.map((e: any) => e.source_agent));
     if (agentsSeen.size >= 2) {
-      const maxSeverity = custEvents.reduce((max, e) =>
+      const maxSeverity = custEvents.reduce((max: string, e: any) =>
         severityRank(e.severity) > severityRank(max) ? e.severity : max,
         "info" as string
       );
-      const customer = (customers ?? []).find(c => c.id === custId);
+      const customer = (customers ?? []).find((c: any) => c.id === custId);
       assessmentEvents.push({
         scope: "customer",
         customer_id: custId,
@@ -405,7 +538,7 @@ serve(async (req: Request) => {
         title: `Multi-signal risk: ${customer?.name ?? custId}`,
         description: `Signals from ${[...agentsSeen].join(", ")} — ${custEvents.length} events`,
         payload: {
-          source_event_ids: custEvents.map(e => e.id),
+          source_event_ids: custEvents.map((e: any) => e.id),
           agents: [...agentsSeen],
           event_count: custEvents.length,
         },
@@ -420,32 +553,28 @@ serve(async (req: Request) => {
   }
 
   if (assessmentEvents.length > 0) {
-    const { error: insertError } = await supabase
+    const { error: insertError } = await supabaseClient
       .from("credit_events")
       .insert(assessmentEvents);
     if (insertError) console.error("Assessment insert error:", insertError);
   }
 
-  // 8. Mark source events as cia_processed
+  // 7. Mark source events as processed
   const eventIds = (events as CreditEvent[]).map(e => e.id);
-  const { error: markError } = await supabase
+  const { error: markError } = await supabaseClient
     .from("credit_events")
     .update({ cia_processed: true })
     .in("id", eventIds);
 
   if (markError) console.error("Mark processed error:", markError);
 
-  // 9. Return response
-  return new Response(
-    JSON.stringify({
-      run_id: runId,
-      demo: false,
-      briefing,
-      events_processed: events.length,
-      composite_risks_detected: assessmentEvents.filter(e => e.event_type !== "DAILY_BRIEFING").length,
-      stale_agents: staleAgents,
-      messages: [{ role: "assistant", content: briefing }],
-    }),
-    { headers: { ...CORS_HEADERS, "Content-Type": "application/json" } }
-  );
+  return jsonRes({
+    run_id: runId,
+    demo: false,
+    briefing,
+    events_processed: events.length,
+    composite_risks_detected: assessmentEvents.filter(e => e.event_type !== "DAILY_BRIEFING").length,
+    stale_agents: staleAgents,
+    messages: [{ role: "assistant", content: briefing }],
+  });
 });

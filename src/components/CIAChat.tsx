@@ -1,215 +1,320 @@
 // src/components/CIAChat.tsx
 // Credit Intelligence Agent — Perplexity-style persistent chat bar
-// Drop this into your layout so it appears on every page.
 
 import { useState, useRef, useEffect } from "react";
-import { useCIA } from "@/hooks/useCIA";
+import { useNavigate } from "react-router-dom";
+import { useCIA, type CIAMessage, type Source } from "@/hooks/useCIA";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 
-// Note: install react-markdown if not present:  npm install react-markdown
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function LoadingDots() {
+  return (
+    <div className="flex gap-1 items-center py-1">
+      <span className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:0ms]" />
+      <span className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:150ms]" />
+      <span className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:300ms]" />
+    </div>
+  );
+}
+
+function severityDot(severity: string) {
+  if (severity === "critical" || severity === "high") return "bg-red-500";
+  if (severity === "medium") return "bg-amber-400";
+  return "bg-muted-foreground/40";
+}
+
+function agentLabel(agent: string) {
+  if (agent.includes("ar_aging") || agent.includes("ar-aging")) return "AR";
+  if (agent.includes("news")) return "News";
+  if (agent.includes("sec")) return "SEC";
+  if (agent.includes("cia")) return "CIA";
+  return agent;
+}
+
+function confidenceBadgeClass(confidence: string) {
+  if (confidence === "High") return "bg-emerald-500/10 text-emerald-600";
+  if (confidence === "Medium") return "bg-amber-500/10 text-amber-600";
+  return "bg-red-500/10 text-red-600";
+}
+
+function ConfidenceDot({ confidence }: { confidence: string }) {
+  const color =
+    confidence === "High"
+      ? "bg-emerald-500"
+      : confidence === "Medium"
+      ? "bg-amber-400"
+      : "bg-red-500";
+  return <span className={cn("inline-block w-1.5 h-1.5 rounded-full ml-1 mb-0.5", color)} />;
+}
+
+interface SourceCardsProps {
+  sources: Source[];
+  onSourceClick: (eventId: string) => void;
+}
+
+function SourceCards({ sources, onSourceClick }: SourceCardsProps) {
+  if (sources.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-border overflow-hidden divide-y divide-border">
+      {sources.map(s => (
+        <button
+          key={s.event_id}
+          onClick={() => onSourceClick(s.event_id)}
+          className="w-full flex items-center gap-2 px-3 py-2 text-xs hover:bg-secondary/50 text-left transition-colors"
+        >
+          <span className={cn("w-2 h-2 rounded-full shrink-0", severityDot(s.severity))} />
+          <span className="font-medium truncate">{s.customer_name}</span>
+          <span className="text-muted-foreground shrink-0">·</span>
+          <span className="text-muted-foreground shrink-0">{agentLabel(s.agent)}</span>
+          <span className="text-muted-foreground shrink-0">·</span>
+          <span className="font-mono text-[10px] text-muted-foreground truncate">{s.event_type.replace(/_/g, " ")}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface QuestionAnswerProps {
+  msg: CIAMessage;
+  onSourceClick: (eventId: string) => void;
+}
+
+function QuestionAnswer({ msg, onSourceClick }: QuestionAnswerProps) {
+  return (
+    <div className="space-y-3">
+      {/* Answer text */}
+      <div className="prose prose-sm max-w-none text-foreground prose-p:text-sm prose-p:leading-relaxed">
+        <ReactMarkdown>{msg.answer ?? ""}</ReactMarkdown>
+      </div>
+
+      {/* Sources + confidence */}
+      {(msg.sources?.length ?? 0) > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Sources
+            </span>
+            {msg.confidence && (
+              <span className={cn("text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-0.5", confidenceBadgeClass(msg.confidence))}>
+                Confidence: {msg.confidence}
+                <ConfidenceDot confidence={msg.confidence} />
+              </span>
+            )}
+          </div>
+          <SourceCards sources={msg.sources!} onSourceClick={onSourceClick} />
+          {msg.confidence_reason && (
+            <p className="text-[10px] text-muted-foreground italic">"{msg.confidence_reason}"</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export function CIAChat() {
-  const { messages, isLoading, error, staleAgents, runCIA, askQuestion, clearMessages } = useCIA();
+  const {
+    messages,
+    suggestions,
+    isLoading,
+    error,
+    staleAgents,
+    askQuestion,
+    runBriefing,
+    clearMessages,
+  } = useCIA();
+
   const [input, setInput] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const navigate = useNavigate();
+
+  const hasMessages = messages.length > 0;
 
   // Auto-scroll to latest message
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
-
-  const handleRunBriefing = async () => {
-    setIsOpen(true);
-    await runCIA();
-  };
+  }, [messages, isLoading]);
 
   const handleSubmit = async () => {
     if (!input.trim() || isLoading) return;
     const q = input.trim();
     setInput("");
-    if (messages.length === 0) {
-      // First message — run full briefing with question
-      await runCIA(q);
-    } else {
-      // Follow-up question
-      await askQuestion(q);
-    }
+    setIsOpen(true);
+    await askQuestion(q);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  const handleSuggestion = async (q: string) => {
+    setIsOpen(true);
+    await askQuestion(q);
+  };
+
+  const handleRunBriefing = async () => {
+    setIsOpen(true);
+    await runBriefing();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
       e.preventDefault();
       handleSubmit();
     }
   };
 
+  const handleSourceClick = (eventId: string) => {
+    navigate(`/events?event_id=${eventId}`);
+    setIsOpen(false);
+  };
+
+  // Spacer height — keeps page content above the bar
+  const spacerClass = !isOpen
+    ? "h-16"
+    : hasMessages
+    ? "h-[520px]"
+    : "h-64";
+
   return (
     <>
-      {/* Floating trigger bar — always visible at bottom */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        {/* Stale agents warning */}
-        {staleAgents.length > 0 && isOpen && (
-          <div className="flex items-center gap-2 px-4 py-1.5 text-xs text-amber-600 bg-amber-50 border-b border-amber-100">
-            <span className="font-medium">Stale data:</span>
-            {staleAgents.map(a => (
-              <Badge key={a} variant="outline" className="text-amber-600 border-amber-300 text-xs">
-                {a.replace("-agent", "")}
-              </Badge>
-            ))}
-            <span className="text-amber-500">— run agents to refresh</span>
-          </div>
-        )}
+      {/* ── Fixed bottom bar ─────────────────────────────────────────────── */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t border-border shadow-[0_-4px_24px_rgba(0,0,0,0.07)]">
 
-        {/* Expanded message panel */}
-        {isOpen && messages.length > 0 && (
-          <div className="border-b border-border">
-            <ScrollArea className="h-[380px] px-4 py-3" ref={scrollRef as React.RefObject<HTMLDivElement>}>
-              <div className="max-w-4xl mx-auto space-y-4">
-                {messages.map((msg, i) => (
-                  <div
-                    key={i}
-                    className={cn(
-                      "flex gap-3",
-                      msg.role === "user" ? "justify-end" : "justify-start"
-                    )}
-                  >
-                    {msg.role === "assistant" && (
-                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                        CIA
-                      </div>
-                    )}
-                    <div
-                      className={cn(
-                        "max-w-[85%] rounded-lg px-4 py-2.5 text-sm",
-                        msg.role === "user"
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted prose prose-sm max-w-none"
-                      )}
-                    >
-                      {msg.role === "assistant" ? (
-                        <ReactMarkdown>{msg.content}</ReactMarkdown>
-                      ) : (
-                        msg.content
-                      )}
-                    </div>
-                    {msg.role === "user" && (
-                      <div className="flex-shrink-0 w-7 h-7 rounded-full bg-secondary flex items-center justify-center text-xs font-bold">
-                        You
-                      </div>
-                    )}
-                  </div>
-                ))}
-
-                {isLoading && (
-                  <div className="flex gap-3 justify-start">
-                    <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-xs font-bold text-primary">
-                      CIA
-                    </div>
-                    <div className="bg-muted rounded-lg px-4 py-2.5">
-                      <div className="flex gap-1 items-center h-4">
-                        <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:0ms]" />
-                        <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:150ms]" />
-                        <span className="w-1.5 h-1.5 bg-primary/40 rounded-full animate-bounce [animation-delay:300ms]" />
-                      </div>
-                    </div>
+        {/* Expanded panel */}
+        {isOpen && (
+          <div className="max-w-4xl mx-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold tracking-widest text-primary">CIA</span>
+                {!hasMessages && (
+                  <span className="text-xs text-muted-foreground">Credit Intelligence Agent</span>
+                )}
+                {staleAgents.length > 0 && (
+                  <div className="flex items-center gap-1.5 ml-2">
+                    <span className="text-[10px] text-amber-600 font-medium">Stale data:</span>
+                    {staleAgents.map(a => (
+                      <Badge key={a} variant="outline" className="text-amber-600 border-amber-300 text-[10px] h-4 px-1">
+                        {a.replace("-agent", "")}
+                      </Badge>
+                    ))}
                   </div>
                 )}
               </div>
-            </ScrollArea>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-muted-foreground hover:text-foreground text-sm px-1 transition-colors"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Content area */}
+            {hasMessages ? (
+              /* Message thread */
+              <div
+                ref={scrollRef}
+                className="overflow-y-auto h-[400px] px-4 py-3"
+              >
+                <div className="max-w-3xl mx-auto space-y-5">
+                  {messages.map((msg, i) => (
+                    <div key={i}>
+                      {msg.role === "user" ? (
+                        <div className="text-sm text-foreground">
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mr-2">
+                            You
+                          </span>
+                          {msg.content}
+                        </div>
+                      ) : msg.answer != null ? (
+                        <QuestionAnswer msg={msg} onSourceClick={handleSourceClick} />
+                      ) : (
+                        /* Briefing-mode markdown */
+                        <div className="prose prose-sm max-w-none text-foreground prose-p:text-sm">
+                          <ReactMarkdown>{msg.content ?? ""}</ReactMarkdown>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {isLoading && <LoadingDots />}
+                </div>
+              </div>
+            ) : (
+              /* Suggestion chips — shown before first message */
+              <div className="px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                  Suggested questions
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  {suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleSuggestion(s)}
+                      disabled={isLoading}
+                      className="text-left text-xs px-3 py-2 rounded-lg border border-border bg-secondary/40 hover:bg-secondary transition-colors disabled:opacity-50"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+                {isLoading && (
+                  <div className="mt-3">
+                    <LoadingDots />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Input bar */}
-        <div className="flex items-end gap-2 px-4 py-3 max-w-4xl mx-auto w-full">
-          {/* Toggle / collapse */}
-          {messages.length > 0 && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="flex-shrink-0 h-9 w-9 p-0"
-              onClick={() => setIsOpen(o => !o)}
-              title={isOpen ? "Collapse" : "Expand"}
-            >
-              {isOpen ? "↓" : "↑"}
-            </Button>
-          )}
-
-          {/* Question input */}
-          <Textarea
-            ref={textareaRef}
+        {/* ── Input bar (always visible) ──────────────────────────────────── */}
+        <div className="max-w-4xl mx-auto px-4 py-2.5 flex items-center gap-2">
+          <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={
-              messages.length === 0
-                ? "Ask CIA a question or click Run Briefing…"
-                : "Ask a follow-up…"
-            }
-            rows={1}
-            className="flex-1 min-h-[40px] max-h-[120px] resize-none text-sm py-2.5"
+            onFocus={() => setIsOpen(true)}
+            placeholder={hasMessages ? "Ask a follow-up…" : "Ask CIA a question…"}
             disabled={isLoading}
-            onClick={() => setIsOpen(true)}
+            className="flex-1 h-9 text-sm px-3 rounded-md border border-input bg-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
           />
-
-          {/* Run Briefing CTA — only before first message */}
-          {messages.length === 0 && (
+          {hasMessages ? (
             <Button
-              onClick={handleRunBriefing}
-              disabled={isLoading}
               size="sm"
-              className="flex-shrink-0 h-9"
-            >
-              {isLoading ? "Analysing…" : "Run Briefing"}
-            </Button>
-          )}
-
-          {/* Send follow-up */}
-          {messages.length > 0 && (
-            <Button
+              className="h-9 w-9 p-0 shrink-0"
               onClick={handleSubmit}
               disabled={isLoading || !input.trim()}
-              size="sm"
-              className="flex-shrink-0 h-9"
+              aria-label="Send"
             >
-              Send
+              →
             </Button>
-          )}
-
-          {/* Clear */}
-          {messages.length > 0 && !isLoading && (
+          ) : (
             <Button
-              variant="ghost"
               size="sm"
-              className="flex-shrink-0 h-9 text-muted-foreground"
-              onClick={clearMessages}
-              title="Clear conversation"
+              className="h-9 shrink-0"
+              onClick={handleRunBriefing}
+              disabled={isLoading}
             >
-              ✕
+              {isLoading ? "Analysing…" : "Run Briefing"}
             </Button>
           )}
         </div>
 
         {error && (
-          <div className="px-4 pb-2 text-xs text-destructive">
-            Error: {error}
+          <div className="max-w-4xl mx-auto px-4 pb-2 text-xs text-destructive">
+            {error}
           </div>
         )}
       </div>
 
-      {/* Spacer so page content isn't hidden behind the bar */}
-      <div className={cn(
-        "transition-all",
-        isOpen && messages.length > 0 ? "h-[480px]" : "h-[68px]"
-      )} />
+      {/* ── Spacer ───────────────────────────────────────────────────────── */}
+      <div className={cn("transition-all duration-300", spacerClass)} />
     </>
   );
 }
