@@ -14,6 +14,7 @@ import ArAging from "@/pages/ArAging";
 import SecFilings from "@/pages/SecFilings";
 import Customers from "@/pages/Customers";
 import Actions from "@/pages/Actions";
+import CIA from "@/pages/CIA";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -57,6 +58,7 @@ const App = () => (
             <Route path="/aging" element={<ArAging />} />
             <Route path="/sec" element={<SecFilings />} />
             <Route path="/customers" element={<Customers />} />
+            <Route path="/cia" element={<CIA />} />
             <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
