@@ -10,7 +10,7 @@ CreditPilot is a set of four autonomous AI agents that automate the routine work
 
 Agents run against your AR and customer data, write their findings to a Postgres database, and surface them through a React dashboard. A human reviews AI-proposed actions (credit limit reductions, credit holds) before they take effect. Nothing changes without approval.
 
-A live demo is available at [mycreditpilot.lovable.app](https://mycreditpilot.lovable.app) — a fictional $500M specialty alloys distributor with 49 customers across seven credit scenarios. No signup required.
+A live demo is available at [creditpilot.vercel.app](https://creditpilot.vercel.app) — a fictional $500M specialty alloys distributor with 49 customers across seven credit scenarios. No signup required.
 
 ---
 
