@@ -1,162 +1,244 @@
-# CreditPilot — AI Agents for Trade Credit Management
+# CreditPilot
 
-CreditPilot is an open-source set of autonomous AI agents that automate the day-to-day work of B2B credit management — dunning letters, news monitoring, SEC filing alerts, credit limit reviews, and more.
-
-I built this to explore what's possible when you apply modern AI agents to trade credit — a domain that has been largely untouched by automation compared to consumer finance.
-
-**Try the live demo →** https://mycreditpilot.lovable.app
-A fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios — bankruptcies, payment issues, credit deterioration, negative news. Run the agents yourself. No signup required.
-
-**Deploy it yourself →** https://github.com/Lawa18/Creditpilot
-The agents connect to your own ERP or AR data instead of the demo company. Straightforward to deploy locally. Four environment variables and you're running.
+Open-source autonomous AI agents for B2B trade credit management.
 
 ---
 
-## What it does
+## What is CreditPilot?
 
-Three agents run against your accounts receivable portfolio:
+CreditPilot is a set of four autonomous AI agents that automate the routine work of a B2B credit analyst: monitoring overdue accounts receivable, scanning for negative news, watching SEC filings for distress signals, and synthesising all signals into a daily credit intelligence briefing.
 
-| Agent | What it monitors | What it does |
-|-------|-----------------|-------------|
-| **AR Aging** | Overdue invoices | Sends dunning letters (stages 1–4), proposes credit limit reductions for 60+ day accounts, proposes credit holds for 90+ day accounts |
-| **News Monitor** | Web news via Tavily | Finds negative news about customers, classifies severity with Claude, sends internal alerts, proposes credit reviews for high/critical findings |
-| **SEC Filing Monitor** | EDGAR filings | Monitors 10-K/10-Q/8-K for going concern warnings, covenant breaches, management changes |
+Agents run against your AR and customer data, write their findings to a Postgres database, and surface them through a React dashboard. A human reviews AI-proposed actions (credit limit reductions, credit holds) before they take effect. Nothing changes without approval.
 
-Agents write their findings and compose messages to a Supabase database. A web UI shows what the agents found, renders the messages they composed, and lets a human approve or reject proposed actions.
-
-No email provider required. No Teams webhook required. Messages are stored in the database and shown in the UI — external delivery is optional.
+A live demo is available at [mycreditpilot.lovable.app](https://mycreditpilot.lovable.app) — a fictional $500M specialty alloys distributor with 49 customers across seven credit scenarios. No signup required.
 
 ---
 
-## Quick start
+## Architecture
+
+```
+React / Vite frontend  →  Supabase Edge Functions (Deno)
+                       →  Supabase Postgres
+                       →  Anthropic Claude API
+```
+
+Agents are Supabase Edge Functions written in TypeScript/Deno. They read from and write to a shared Postgres database. The frontend is a Vite/React SPA that queries Postgres directly via the Supabase client. There is no separate API server.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram and event-driven design.
+
+---
+
+## Agents
+
+### AR Aging Agent (`ar-aging-agent`)
+Scans all customers for overdue AR buckets and high credit utilisation. For customers in the 61–90 day and 90+ day buckets it composes dunning letters (Claude-generated, staged 1–4 by severity) and Teams alerts, and proposes credit limit reductions for human approval. Uses payment history analysis and Altman Z-score zones to calibrate severity.
+
+### News Monitor Agent (`news-monitor-agent`)
+Scans unreviewed rows in the `negative_news` table (pre-populated from news sources). Classifies severity, composes Teams alerts for critical and high severity items, and writes credit events for downstream CIA processing. In production, news ingestion is handled separately — the agent processes what is already in the database.
+
+### SEC Filing Monitor Agent (`sec-monitor-agent`)
+Monitors companies in the `sec_monitoring` table for active SEC filing alerts. Reads the `v_sec_monitoring_dashboard` view and writes credit events for detected risk signals: going concern warnings, covenant waivers, CEO departures, and cash runway issues. Composes email alerts to the credit analysis team.
+
+### Credit Intelligence Agent (`cia-agent`)
+Synthesises signals from all three monitoring agents into structured intelligence. Operates in three modes: `briefing` (daily portfolio summary, calls Claude Opus), `question` (answers a specific credit question with cited sources, calls Claude Sonnet), and `suggestions` (generates relevant follow-up questions, calls Claude Haiku). Writes `DAILY_BRIEFING` and `COMPOSITE_RISK` events back to `credit_events` and marks source events as processed.
+
+See [docs/AGENTS.md](docs/AGENTS.md) for full agent documentation including event taxonomies.
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18, Vite, TypeScript, Tailwind CSS, shadcn/ui |
+| Routing | React Router v6 |
+| Data fetching | TanStack Query (React Query) |
+| Backend | Supabase Edge Functions (Deno) |
+| Database | Supabase Postgres (PostgREST) |
+| AI | Anthropic Claude API (Opus, Sonnet, Haiku) |
+| Deployment | Vercel (frontend), Supabase (database + functions) |
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- [Supabase](https://supabase.com) account (free tier works)
-- [Anthropic API key](https://console.anthropic.com) — for news agent classification
-- [Tavily API key](https://tavily.com) — for news agent web search (1,000 searches/month free)
 
-### 1. Create a Supabase project
-Go to supabase.com → New project. Note your project URL and anon key from Settings → API.
+- [Node.js](https://nodejs.org) 18+
+- [Supabase CLI](https://supabase.com/docs/guides/cli) — `npm install -g supabase`
+- A Supabase project ([supabase.com](https://supabase.com), free tier works)
+- An [Anthropic API key](https://console.anthropic.com)
 
-### 2. Apply the schema
-In Supabase → SQL Editor, run database/schema.sql in full.
+### 1. Clone and install
 
-### 3. Load demo data
-Run database/seed.sql in Supabase SQL Editor to load the demo company — Global Trading Solutions Inc, a fictional $500M specialty alloys distributor with 49 customers across 7 credit scenarios.
-
-### 4. Deploy the agents
-In Supabase dashboard → Edge Functions → New Function:
-- Create function named ar-aging-agent, paste contents of supabase/functions/ar-aging-agent/index.ts, deploy
-- Create function named news-monitor-agent, paste contents of supabase/functions/news-monitor-agent/index.ts, deploy
-
-### 5. Set environment variables
-In Supabase → Edge Functions → Manage secrets:
-ANTHROPIC_API_KEY   = sk-ant-...
-TAVILY_API_KEY      = tvly-...
-
-### 6. Run the UI
 ```bash
-cd ui
+git clone https://github.com/Lawa18/Creditpilot.git
+cd Creditpilot
 npm install
+```
+
+### 2. Configure environment variables
+
+```bash
 cp .env.example .env
-# Add your VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
+```
+
+Edit `.env` with your Supabase project URL and anon key (Settings → API in the Supabase dashboard).
+
+### 3. Apply the database schema
+
+```bash
+supabase login
+supabase link --project-ref your-project-ref
+supabase db push
+```
+
+This runs all 14 migrations in `supabase/migrations/` in order, creating the full schema and seeding the demo data.
+
+### 4. Set Supabase function secrets
+
+In the Supabase dashboard → Edge Functions → Manage secrets, add:
+
+```
+ANTHROPIC_API_KEY = sk-ant-...
+DEMO_MODE         = true
+```
+
+### 5. Deploy the edge functions
+
+```bash
+supabase functions deploy ar-aging-agent
+supabase functions deploy news-monitor-agent
+supabase functions deploy sec-monitor-agent
+supabase functions deploy cia-agent
+```
+
+### 6. Run the frontend
+
+```bash
 npm run dev
 ```
 
+Open [http://localhost:5173](http://localhost:5173). With `DEMO_MODE=true` the demo data loads automatically on first page visit.
+
 ---
 
-## Repository structure
+## Environment Variables
+
+### Frontend (`.env`)
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_SUPABASE_URL` | Yes | Your Supabase project URL (e.g. `https://xxx.supabase.co`) |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Yes | Your Supabase anon/public key |
+| `VITE_DEMO_MODE` | Yes | `true` to use seed data, `false` for live data |
+
+### Supabase Function Secrets
+
+Set these in the Supabase dashboard → Edge Functions → Manage secrets:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes (live mode) | Anthropic API key for Claude calls |
+| `DEMO_MODE` | Yes | `true` replays seed data without API calls (except CIA question mode) |
+| `SUPABASE_URL` | Auto | Set automatically by Supabase |
+| `SUPABASE_SERVICE_ROLE_KEY` | Auto | Set automatically by Supabase |
+
+---
+
+## Database
+
+The schema is defined across 14 migration files in `supabase/migrations/`. Key tables:
+
+| Table | Purpose |
+|-------|---------|
+| `customers` | Portfolio of monitored counterparties with credit limits |
+| `credit_events` | Central event log — all agents write here |
+| `agent_messages` | Composed communications (dunning letters, Teams alerts) |
+| `pending_actions` | AI-proposed actions awaiting human approval |
+| `agent_runs` | Audit log of every agent execution |
+| `negative_news` | News items for the news monitor agent to process |
+| `sec_monitoring` | Companies being watched for SEC filing alerts |
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for schema details and relationships.
+
+---
+
+## Demo Mode
+
+When `DEMO_MODE=true`, agents run against pre-seeded fictional data without burning API tokens or touching real customer data. A Reset Demo button in the Actions page restores all tables to their seed state and re-runs the agents.
+
+All demo rows are tagged with `is_demo = true`. This column exists on `credit_events`, `agent_messages`, and `pending_actions` — queries filter by it so demo and production data never mix.
+
+See [docs/DEMO_MODE.md](docs/DEMO_MODE.md) for the full explanation.
+
+---
+
+## Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full deployment instructions including Vercel configuration, Supabase project setup, and promoting from demo to production.
+
+---
+
+## Project Structure
+
+```
 creditpilot/
-├── database/
-│   ├── schema.sql                      # Full database schema
-│   ├── seed.sql                        # Demo company data (49 customers)
-│   ├── migration_001.sql               # Agent infrastructure tables
-│   └── migration_002.sql              # Agent 4-8 tables
-│
+├── src/
+│   ├── components/
+│   │   ├── AppSidebar.tsx         # Navigation sidebar with agent run status badges
+│   │   ├── CIAChat.tsx            # CIA launcher bar — bottom of every page
+│   │   ├── AgentPill.tsx          # Colored pill showing which agent produced an event
+│   │   ├── SeverityBadge.tsx      # Critical/high/medium/low severity indicator
+│   │   ├── SkeletonCard.tsx       # Loading skeleton components
+│   │   └── ui/                    # shadcn/ui component library (do not edit)
+│   ├── hooks/
+│   │   └── useCIA.ts              # Hook for CIA agent — suggestions, questions, briefings
+│   ├── lib/
+│   │   ├── constants.ts           # DEMO_MODE flag, agent config
+│   │   ├── format.ts              # Currency and date formatting
+│   │   ├── initDemo.ts            # Demo reset logic — shared by Reset button and auto-init
+│   │   └── utils.ts               # Tailwind class merging (cn utility)
+│   ├── pages/
+│   │   ├── CreditEvents.tsx       # Default landing page — unified signal log
+│   │   ├── Actions.tsx            # Pending and completed human approvals
+│   │   ├── ArAging.tsx            # AR aging dashboard
+│   │   ├── NewsMonitor.tsx        # Negative news alert feed
+│   │   ├── SecFilings.tsx         # SEC filing monitoring with EDGAR links
+│   │   ├── Customers.tsx          # Customer directory with credit metrics
+│   │   └── CIA.tsx                # Perplexity-style CIA answer page (/cia?q=...)
+│   └── App.tsx                    # Route definitions, SidebarLayout, demo auto-init
 ├── supabase/
-│   └── functions/
-│       ├── _shared/                    # Shared utilities
-│       ├── ar-aging-agent/             # AR Aging Agent
-│       └── news-monitor-agent/         # News Monitor Agent
-│
-└── src/                                # React UI (built with Lovable)
-    ├── pages/
-    │   ├── ActivityFeed.tsx
-    │   ├── NewsMonitor.tsx
-    │   ├── ARaging.tsx
-    │   ├── SECFilings.tsx
-    │   ├── Customers.tsx
-    │   └── Demo.tsx
-    └── components/
-
----
-
-## Agent roster — current and planned
-
-| # | Agent | Status | What it does |
-|---|-------|--------|-------------|
-| 1 | AR Aging | ✅ Built | Dunning letters, credit limit proposals, credit holds |
-| 2 | News Monitor | ✅ Built | Web news search, Claude classification, credit alerts |
-| 3 | SEC Filing Monitor | ✅ Built | EDGAR filing alerts, risk signal detection |
-| 4 | Trade Reference | 🔜 Planned | Automates outbound credit reference letters |
-| 5 | Payment Behaviour Monitor | 🔜 Planned | Detects deterioration before invoices go overdue |
-| 6 | Credit Limit Review | 🔜 Planned | Stale limit detection, increase/decrease proposals |
-| 7 | Bankruptcy & Distress Monitor | 🔜 Planned | Court filings, claim deadlines, recovery tracking |
-| 8 | Onboarding & Credit Scoring | 🔜 Planned | Initial credit memo, limit proposal, risk rating |
-
----
-
-## Skills
-
-Agents are built from reusable skills — composable functions that do one thing well. Skills live in supabase/functions/_shared/skills/ and are called by multiple agents.
-
-With a poor prompt, you get a poor response. With poor skills, you get poor agents. The quality of your agents is a direct reflection of the domain expertise encoded in their skills.
-
-Current skills embedded in agents (extraction in progress):
-- analyse-payment-behaviour
-- calculate-credit-limit-proposal
-- compose-dunning-letter
-- compose-teams-alert
-- classify-news
-- search-news
-
----
-
-## Environment variables
-In Supabase secrets (for the agents):
-ANTHROPIC_API_KEY=sk-ant-...
-TAVILY_API_KEY=tvly-...
-In the UI .env file (for the frontend):
-VITE_SUPABASE_URL=https://xxx.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJ...
-
----
-
-## Security
-
-### For the public demo (fictional data)
-The demo page at /demo is intentionally public and unauthenticated. Anyone can run agents, approve/reject pending actions, and reset the demo. This is by design.
-
-### Before loading real company data
-1. Remove anon write policies from pending_actions, customers, credit_actions
-2. Add authentication to the main UI (Supabase Auth)
-3. Use a dedicated Supabase project — not the same one as the demo
-4. Upgrade from Supabase free tier (free tier pauses after 1 week of inactivity)
+│   ├── functions/
+│   │   ├── _shared/
+│   │   │   └── skills/            # Reusable skill functions
+│   │   │       ├── analytical/    # analyse-payment-behaviour, calculate-credit-limit-proposal
+│   │   │       └── generative/    # compose-dunning-letter, compose-teams-alert
+│   │   ├── ar-aging-agent/        # AR Aging monitoring agent
+│   │   ├── news-monitor-agent/    # Negative news monitoring agent
+│   │   ├── sec-monitor-agent/     # SEC filing monitoring agent
+│   │   └── cia-agent/             # Credit Intelligence Agent (synthesis + Q&A)
+│   └── migrations/                # 14 SQL migration files (schema + seed data)
+├── .env.example                   # Frontend env var template
+├── CONTRIBUTING.md
+└── README.md
+```
 
 ---
 
 ## Contributing
 
-Agents follow a consistent pattern. To add a new agent:
-1. Create supabase/functions/your-agent-name/index.ts
-2. Create an agent_runs record at the start
-3. Write findings to the appropriate table
-4. Write messages to agent_messages
-5. Write proposed actions to pending_actions
-6. Update agent_runs with stats and summary at the end
-7. Add a Run button on the /demo page
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, branch conventions, how to add a new agent, and the PR checklist.
 
-To contribute a skill, add it to supabase/functions/_shared/skills/ following the skill contract in CONTRIBUTING.md.
+---
+
+## Security
+
+The demo uses intentionally open RLS policies so anyone can interact with the demo data. **Before loading real company data:**
+
+1. Remove anon write policies from `pending_actions`, `customers`, `credit_actions`
+2. Add authentication (Supabase Auth)
+3. Use a dedicated Supabase project — not the same one as the demo
 
 ---
 
@@ -168,8 +250,8 @@ MIT — use it, fork it, build on it.
 
 ## About
 
-Built by Lars Wallin — Head of Financial Institutions at Coface, one of the world's largest trade credit insurance companies. This project applies that domain expertise to autonomous AI agents for B2B credit managers.
+Built by Lars Wallin — Head of Financial Institutions at Coface, one of the world's largest trade credit insurance companies. This project applies domain expertise from trade credit insurance to autonomous AI agents for B2B credit managers.
 
-Connect on LinkedIn: https://www.linkedin.com/in/larsewallin/
+Connect on [LinkedIn](https://www.linkedin.com/in/larsewallin/).
 
-The demo company (Global Trading Solutions Inc) and all 49 customer accounts are entirely fictional.
+The demo company and all 49 customer accounts are entirely fictional.

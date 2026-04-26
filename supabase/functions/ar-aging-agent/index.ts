@@ -1,3 +1,27 @@
+/**
+ * AR Aging Agent — supabase/functions/ar-aging-agent/index.ts
+ *
+ * Scans all customers for overdue AR buckets and high credit utilisation.
+ * For customers in the 61–90 day and 90+ day buckets the agent:
+ *   - Composes staged dunning letters (stages 1–4) via the compose-dunning-letter skill
+ *   - Composes Microsoft Teams alerts for accounts with >$100K over 90 days
+ *   - Proposes credit limit reductions via the calculate-credit-limit-proposal skill
+ *
+ * Request body: { triggered_by?: string }
+ * Response:     { run_id: string, status: "completed" }
+ *
+ * Tables read:  v_ar_aging_current, payment_transactions, credit_metrics
+ * Tables written: credit_events, agent_messages, pending_actions, agent_runs
+ *
+ * Event types emitted:
+ *   OVERDUE_BUCKET_1_30 | OVERDUE_BUCKET_31_60 | OVERDUE_BUCKET_61_90 |
+ *   OVERDUE_BUCKET_OVER_90 | CRITICAL_UTILIZATION | HIGH_UTILIZATION |
+ *   CONCENTRATION_RISK
+ *
+ * Rate limit: 60 minutes between runs (HTTP 429 if exceeded).
+ * Demo mode:  Returns a pre-baked run log; resets pending_actions to pending.
+ *             Controlled by DEMO_MODE=true Supabase secret.
+ */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { analysePaymentBehaviour } from "../_shared/skills/analytical/analyse-payment-behaviour.ts";
 import { calculateCreditLimitProposal } from "../_shared/skills/analytical/calculate-credit-limit-proposal.ts";

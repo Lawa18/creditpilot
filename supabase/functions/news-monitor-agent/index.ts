@@ -1,3 +1,27 @@
+/**
+ * News Monitor Agent — supabase/functions/news-monitor-agent/index.ts
+ *
+ * Processes unreviewed rows in the negative_news table. For critical and high
+ * severity items the agent:
+ *   - Composes Microsoft Teams alerts via the compose-teams-alert skill
+ *   - Writes credit events for downstream CIA processing
+ *
+ * News ingestion (fetching and classifying raw news) is handled separately —
+ * this agent processes what is already in the database.
+ *
+ * Request body: { triggered_by?: string }
+ * Response:     { run_id: string, status: "completed" }
+ *
+ * Tables read:  negative_news (joined with customers)
+ * Tables written: credit_events, agent_messages, agent_runs
+ *
+ * Event types emitted:
+ *   NEGATIVE_NEWS_CRITICAL | NEGATIVE_NEWS_HIGH | NEGATIVE_NEWS_MEDIUM
+ *
+ * Rate limit: 60 minutes between runs (HTTP 429 if exceeded).
+ * Demo mode:  Returns a pre-baked run log. No rows written.
+ *             Controlled by DEMO_MODE=true Supabase secret.
+ */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { composeTeamsAlert } from "../_shared/skills/generative/compose-teams-alert.ts";
 

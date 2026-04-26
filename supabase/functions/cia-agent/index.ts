@@ -1,3 +1,37 @@
+/**
+ * Credit Intelligence Agent (CIA) — supabase/functions/cia-agent/index.ts
+ *
+ * Synthesises signals from all three monitoring agents into structured credit
+ * intelligence. Operates in three modes selected via request body { mode }:
+ *
+ * briefing (default)
+ *   Reads unprocessed credit_events (cia_processed = false), calls Claude Opus
+ *   to produce a portfolio-wide daily briefing, writes DAILY_BRIEFING and
+ *   COMPOSITE_RISK events, and marks source events cia_processed = true.
+ *   Demo: returns DEMO_BRIEFING constant; no API call.
+ *
+ * question
+ *   Accepts { question: string }. Keyword-filters credit_events on title and
+ *   description (up to 3 keywords, ilike), falls back to most recent 15 if
+ *   fewer than 2 results. Calls Claude Sonnet (live) or Claude Haiku (demo).
+ *   Returns { answer, sources[], confidence, confidence_reason }.
+ *   Note: makes a real API call even in DEMO_MODE.
+ *
+ * suggestions
+ *   Returns 4 suggested questions based on recent credit signals.
+ *   Calls Claude Haiku (live) or returns DEMO_SUGGESTIONS (demo).
+ *
+ * Request body: { mode?: "briefing"|"question"|"suggestions", question?: string,
+ *                 force_refresh?: boolean, customer_id?: string }
+ * Response (briefing): { run_id, briefing, events_processed, stale_agents, messages }
+ * Response (question): { answer, sources[], confidence, confidence_reason }
+ * Response (suggestions): { suggestions: string[] }
+ *
+ * Tables read:  credit_events, customers, agent_runs
+ * Tables written (briefing): credit_events (DAILY_BRIEFING, COMPOSITE_RISK*), agent_runs
+ *
+ * Demo mode: Controlled by DEMO_MODE=true Supabase secret.
+ */
 // supabase/functions/cia-agent/index.ts
 // Credit Intelligence Agent (CIA) — synthesises signals from all agents into daily briefings
 

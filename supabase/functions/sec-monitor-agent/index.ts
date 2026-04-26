@@ -1,3 +1,30 @@
+/**
+ * SEC Filing Monitor Agent — supabase/functions/sec-monitor-agent/index.ts
+ *
+ * Monitors companies in the sec_monitoring table for active SEC filing alerts.
+ * Reads the v_sec_monitoring_dashboard view to find companies where
+ * alert_triggered = true. For each alerted company the agent:
+ *   - Composes an email alert to the credit analysis team
+ *   - Writes a credit event classifying the detected risk signals
+ *
+ * Request body: { triggered_by?: string }
+ * Response:     { run_id: string, status: "completed" }
+ *
+ * Tables read:  v_sec_monitoring_dashboard, customers (ticker lookup)
+ * Tables written: credit_events, agent_messages, agent_runs
+ *
+ * Event types emitted:
+ *   GOING_CONCERN_WARNING | COVENANT_WAIVER | CEO_DEPARTURE | SEC_ALERT
+ *
+ * Severity mapping:
+ *   going_concern_warning / cash_runway_<3_quarters → critical
+ *   covenant_waiver / CEO_departure                → high
+ *   other                                          → medium
+ *
+ * Rate limit: 60 minutes between runs (HTTP 429 if exceeded).
+ * Demo mode:  Returns a pre-baked run log. No rows written.
+ *             Controlled by DEMO_MODE=true Supabase secret.
+ */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 
 const corsHeaders = {
