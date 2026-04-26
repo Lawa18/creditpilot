@@ -39,6 +39,7 @@ All demo rows carry `is_demo = true`. This column exists on:
 - `credit_events`
 - `agent_messages`
 - `pending_actions`
+- `negative_news` (added in migration `20260426000000_news_agent_foundation`; all pre-existing seed rows tagged `is_demo = true`)
 
 Demo and production data never mix because queries can filter by `is_demo`.
 

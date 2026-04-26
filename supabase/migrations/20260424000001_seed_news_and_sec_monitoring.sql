@@ -4,7 +4,7 @@
 INSERT INTO public.negative_news (id, customer_id, headline, summary, source, news_date, category, severity, sentiment_score, reviewed, agent_name)
 VALUES
   (
-    'n0000001-0000-0000-0000-000000000001',
+    'e0000001-0000-0000-0000-000000000001',
     'c0000001-0000-0000-0000-000000000049',  -- Heliogen Inc
     'Heliogen liquidity concerns mount as runway shrinks',
     'Analyst report cites deteriorating cash position and risk of covenant breach in Q3.',
@@ -17,7 +17,7 @@ VALUES
     'news_monitor_agent'
   ),
   (
-    'n0000001-0000-0000-0000-000000000002',
+    'e0000001-0000-0000-0000-000000000002',
     'c0000001-0000-0000-0000-000000000029',  -- Arconic Corporation
     'Arconic placed on negative watch by Moody''s',
     'Rating agency places Arconic on negative watch citing high leverage and slowing demand.',
@@ -32,19 +32,19 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- sec_monitoring: seed rows for the two demo-monitored customers.
--- Uses ON CONFLICT (id) DO NOTHING so existing rows with ai_risk_score / ai_summary are preserved.
+-- ON CONFLICT (customer_id) preserves existing rows (ai_risk_score / ai_summary).
 INSERT INTO public.sec_monitoring (id, customer_id, cik, alert_triggered)
 VALUES
   (
-    's0000001-0000-0000-0000-000000000001',
+    'f0000001-0000-0000-0000-000000000001',
     'c0000001-0000-0000-0000-000000000021',  -- Triumph Group
     '1021162',
     true
   ),
   (
-    's0000001-0000-0000-0000-000000000002',
+    'f0000001-0000-0000-0000-000000000002',
     'c0000001-0000-0000-0000-000000000049',  -- Heliogen Inc
     '1840292',
     true
   )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (customer_id) DO NOTHING;

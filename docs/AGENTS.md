@@ -68,9 +68,16 @@ Returns a pre-baked run log (49 customers scanned, 19 conditions found, 5 messag
 
 ### What it does
 
-Processes unreviewed rows in the `negative_news` table. For critical and high severity items it composes Microsoft Teams alerts and writes credit events for downstream CIA processing.
+Runs a full live news pipeline for each customer:
 
-News ingestion (fetching and classifying raw news) is handled separately — this agent processes what is already in the database.
+1. Searches for negative news via Tavily (`search-news` skill, `TavilyProvider`)
+2. Deduplicates articles by content fingerprint (`btoa(customer_id|headline|date)`) against `negative_news.content_fingerprint`
+3. Classifies each new article with Claude Haiku (`classify-news` skill); falls back to keyword classifier if the API key is absent or the response is invalid
+4. Skips articles with `confidence < 0.7`
+5. Inserts qualifying articles into `negative_news`
+6. For medium/high/critical severity: writes a `credit_events` row and composes a Microsoft Teams alert
+
+If `TAVILY_API_KEY` is not set the agent falls back to legacy mode: reads existing unreviewed rows from `negative_news` and processes the top 5 critical/high items.
 
 ### Trigger
 
@@ -78,17 +85,36 @@ Manual (Run Agent button in the News Monitor page) or programmatic.
 
 ### Data sources
 
-- `negative_news` — rows where `reviewed = false`, joined with `customers`
+| Source | Description |
+|--------|-------------|
+| `customers` | All customers (max 10 per run) — company name, ticker |
+| Tavily API | Live news search via `TAVILY_API_KEY` |
+| Anthropic API | Article classification via `ANTHROPIC_API_KEY` (Claude Haiku) |
+| `negative_news` | Fingerprint dedup check before insert |
 
 ### Outputs
 
 | Table | Event / Record type | Condition |
 |-------|---------------------|-----------|
+| `negative_news` | New article row | Passes dedup + confidence threshold |
 | `credit_events` | `NEGATIVE_NEWS_CRITICAL` | `severity = 'critical'` |
 | `credit_events` | `NEGATIVE_NEWS_HIGH` | `severity = 'high'` |
 | `credit_events` | `NEGATIVE_NEWS_MEDIUM` | `severity = 'medium'` |
-| `agent_messages` | `news_alert` (Teams) | Top 5 critical/high items |
+| `agent_messages` | `news_alert` (Teams) | Medium/high/critical article; credit event successfully written |
 | `agent_runs` | run audit record | Every execution |
+
+### Deduplication
+
+Two-layer approach:
+
+1. **Pre-check**: query `negative_news` by `content_fingerprint` before calling classify — avoids wasting API credits on known articles.
+2. **Safety net**: upsert with `ON CONFLICT (content_fingerprint) DO NOTHING` to handle race conditions.
+
+Credit events have a separate daily dedup index (`credit_events_daily_dedup_idx`) — one event per customer per event type per calendar day from this agent.
+
+### Confidence threshold
+
+`CONFIDENCE_THRESHOLD = 0.7`. Articles below this are inserted into `negative_news` but skipped for credit events and alerts. The `classify-news` skill never applies the threshold internally — filtering is this agent's responsibility.
 
 ### Rate limit
 
@@ -96,7 +122,7 @@ Manual (Run Agent button in the News Monitor page) or programmatic.
 
 ### Demo mode
 
-Returns a pre-baked run log (28 items scanned, 25 critical/high, 5 notifications). No credit_events are written.
+Returns a pre-baked run log (28 items scanned, 25 critical/high, 5 notifications). No rows are written.
 
 ---
 
