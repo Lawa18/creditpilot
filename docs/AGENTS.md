@@ -22,7 +22,6 @@ Manual (Run Agent button in the AR Aging page) or programmatic.
 
 - `v_ar_aging_current` — current AR aging snapshot per customer
 - `payment_transactions` — last 24 payments per customer (used by `analyse-payment-behaviour` skill)
-- `credit_metrics` — Altman Z-score per customer
 
 ### Outputs
 
@@ -33,8 +32,9 @@ Manual (Run Agent button in the AR Aging page) or programmatic.
 | `credit_events` | `CONCENTRATION_RISK` | Customer represents >20% of total AR portfolio |
 | `agent_messages` | `collection_reminder` (email, dunning letter) | Top 5 at-risk customers |
 | `agent_messages` | `internal_alert` (Teams) | Accounts with >$100K over 90 days |
-| `pending_actions` | `CREDIT_LIMIT_REDUCTION` | `calculateCreditLimitProposal` skill recommends a reduction |
 | `agent_runs` | run audit record | Every execution |
+
+**Note:** AR aging agent is a pure signal agent — it does not write `pending_actions`. Credit limit decisions are owned by the CIA agent (briefing mode, Step 6b).
 
 ### Severity logic
 
@@ -130,7 +130,14 @@ Returns a pre-baked run log (28 items scanned, 25 critical/high, 5 notifications
 
 ### What it does
 
-Monitors companies in the `sec_monitoring` table for active SEC filing alerts. Reads the `v_sec_monitoring_dashboard` view to find companies where `alert_triggered = true`. For each, it composes an email alert to the credit analysis team and writes a credit event.
+Actively fetches and analyses recent SEC filings for all customers in the `sec_monitoring` table via the SEC EDGAR API (free, no API key required). For each customer:
+
+1. Calls EDGAR submissions API to get recent 10-K, 10-Q, 8-K filings (last 90 days)
+2. Fetches the primary document for each filing and scans for risk keywords
+3. Deduplicates by `accession_number` — skips filings already in `sec_filings`
+4. For filings with risk signals: writes `sec_filings`, `credit_events`, `agent_messages`, and updates `sec_monitoring`
+5. Updates `last_checked_at` for all processed customers
+6. Processes max 10 customers per run; non-fatal per-customer errors continue the loop
 
 ### Trigger
 
@@ -138,27 +145,61 @@ Manual (Run Agent button in the SEC Filings page) or programmatic.
 
 ### Data sources
 
-- `v_sec_monitoring_dashboard` — SEC monitoring status per company with alert flags
-- `customers` — lookup customer_id by ticker
+| Source | Description |
+|--------|-------------|
+| `sec_monitoring` | All monitored customers (with `customers` join, `is_demo` filter) |
+| `sec_filings` | Dedup check by `accession_number` before insert |
+| SEC EDGAR API | `https://data.sec.gov/submissions/CIK{paddedCik}.json` — free, no key |
+
+### Skill used
+
+`fetch-sec-filing.ts` (`EdgarProvider`) — fetches submissions JSON, parses filing metadata, fetches document text (5000 chars), detects risk keywords via `detectRiskSignals`.
 
 ### Outputs
 
 | Table | Event / Record type | Condition |
 |-------|---------------------|-----------|
-| `credit_events` | `GOING_CONCERN_WARNING` | `going_concern_warning` or `cash_runway_<3_quarters` in risk signals |
-| `credit_events` | `COVENANT_WAIVER` | `covenant_waiver` in risk signals |
-| `credit_events` | `CEO_DEPARTURE` | `CEO_departure` in risk signals |
+| `sec_filings` | Filing row | Every new filing (with or without risk signals) |
+| `credit_events` | `GOING_CONCERN_WARNING` | `going_concern_warning` or `cash_runway_<3_quarters` signal |
+| `credit_events` | `COVENANT_WAIVER` | `covenant_waiver` signal |
+| `credit_events` | `CEO_DEPARTURE` | `CEO_departure` signal |
 | `credit_events` | `SEC_ALERT` | Other risk signals |
-| `agent_messages` | `sec_alert` (email) | Every alerted company |
+| `agent_messages` | `sec_alert` (email) | Each filing with risk signals |
+| `sec_monitoring` | `alert_triggered`, `alert_date`, `risk_signals`, `last_checked_at` updated | After processing |
 | `agent_runs` | run audit record | Every execution |
+
+### Deduplication
+
+`sec_filings` has a unique index on `(customer_id, accession_number)`. The agent pre-checks before insert and skips known filings. Safe on repeated runs.
 
 ### Severity logic
 
 | Risk signal | Severity |
 |-------------|---------|
-| Going concern warning, cash runway <3 quarters | critical |
-| Covenant waiver, CEO departure | high |
+| `going_concern_warning`, `cash_runway_<3_quarters` | critical |
+| `covenant_waiver`, `CEO_departure` | high |
 | Other | medium |
+
+### Risk keywords detected
+
+| Keyword in filing text | Signal |
+|------------------------|--------|
+| going concern, substantial doubt | `going_concern_warning` |
+| covenant waiver, waiver of covenant, covenant breach | `covenant_waiver` |
+| chief executive, ceo resigned, ceo departure | `CEO_departure` |
+| cash runway | `cash_runway_<3_quarters` |
+| material weakness | `material_weakness` |
+| restatement | `restatement` |
+| sec investigation | `sec_investigation` |
+| pension underfunding | `pension_underfunding` |
+| strategic review | `strategic_review` |
+| revenue miss | `revenue_miss` |
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CREDIT_TEAM_EMAIL` | `credit-team@company.com` | Recipient for SEC alert emails |
 
 ### Rate limit
 
@@ -166,7 +207,7 @@ Manual (Run Agent button in the SEC Filings page) or programmatic.
 
 ### Demo mode
 
-Returns a pre-baked run log (3 filings monitored, 2 alerts, 2 notifications). No credit_events are written.
+Returns a pre-baked run log (3 filings monitored, 2 alerts, 2 notifications). No EDGAR calls or writes.
 
 ---
 
@@ -205,7 +246,10 @@ Synthesises signals from all three monitoring agents into structured intelligenc
 | `credit_events` | `DAILY_BRIEFING` (scope: portfolio) | Every briefing run |
 | `credit_events` | `COMPOSITE_RISK_CRITICAL` or `COMPOSITE_RISK_ELEVATED` | Customer flagged by ≥2 agents |
 | `credit_events` | Source events updated: `cia_processed = true` | After processing |
+| `pending_actions` | `CREDIT_LIMIT_REDUCTION` | `assessCompositeRisk` recommends action AND `calculateCreditLimitProposal` returns `reduce` |
 | `agent_runs` | run audit record | Every execution |
+
+**CIA agent is the sole owner of `pending_actions`.** Sensing agents (AR aging, news, SEC) write `credit_events` only.
 
 ### Question mode response shape
 
