@@ -35,7 +35,7 @@ const RISK_KEYWORDS: Record<string, string> = {
   "covenant waiver":      "covenant_waiver",
   "waiver of covenant":   "covenant_waiver",
   "covenant breach":      "covenant_waiver",
-  "chief executive":      "CEO_departure",
+  "chief executive officer resigned": "CEO_departure",
   "ceo resigned":         "CEO_departure",
   "ceo departure":        "CEO_departure",
   "cash runway":          "cash_runway_<3_quarters",
@@ -91,10 +91,9 @@ export class EdgarProvider implements SecFilingProvider {
       const recent = sub.filings?.recent;
       if (!recent) return [];
 
-      const forms: string[]              = recent.form            ?? [];
-      const dates: string[]              = recent.filingDate      ?? [];
-      const accNos: string[]             = recent.accessionNumber ?? [];
-      const primaryDocs: string[]        = recent.primaryDocument ?? [];
+      const forms: string[]   = recent.form            ?? [];
+      const dates: string[]   = recent.filingDate      ?? [];
+      const accNos: string[]  = recent.accessionNumber ?? [];
 
       const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
       const results: SecFiling[] = [];
@@ -108,32 +107,37 @@ export class EdgarProvider implements SecFilingProvider {
         if (new Date(filingDate) < cutoff) continue;
 
         const accessionNumber = accNos[i] ?? "";
-        const primaryDoc      = primaryDocs[i] ?? "";
         const accClean        = accessionNumber.replace(/-/g, "");
-        const documentUrl     = `https://www.sec.gov/Archives/edgar/data/${cik}/${accClean}/${primaryDoc}`;
+        const documentUrl     = `https://www.sec.gov/Archives/edgar/data/${cik}/${accClean}/`;
 
         let riskSignals: string[] = [];
-        let keyFindings: string;
+        let keyFindings = "";
 
-        if (primaryDoc) {
-          try {
-            const docResp = await fetch(documentUrl, {
-              headers: { "User-Agent": EDGAR_UA },
-            });
-            if (docResp.ok) {
-              const raw  = await docResp.text();
-              const text = stripHtml(raw).slice(0, 5000);
-              riskSignals = detectRiskSignals(text);
+        try {
+          // Fetch filing index JSON to locate the main document
+          const indexUrl = `https://data.sec.gov/Archives/edgar/data/${cik}/${accClean}/${accessionNumber}-index.json`;
+          const indexResp = await fetch(indexUrl, { headers: { "User-Agent": EDGAR_UA } });
+
+          if (indexResp.ok) {
+            const index = await indexResp.json();
+            const mainDoc = (index.documents ?? []).find(
+              (d: any) => d.type === forms[i] && d.document?.endsWith(".htm")
+            );
+
+            if (mainDoc) {
+              const docResp = await fetch(`https://www.sec.gov${mainDoc.document}`, {
+                headers: { "User-Agent": EDGAR_UA },
+              });
+              if (docResp.ok) {
+                const raw     = await docResp.text();
+                const stripped = stripHtml(raw).slice(0, 10000);
+                riskSignals   = detectRiskSignals(stripped);
+                keyFindings   = stripped.slice(0, 500);
+              }
             }
-          } catch {
-            // Single document fetch failure is non-fatal
           }
-        }
-
-        if (riskSignals.length > 0) {
-          keyFindings = `${filingType} filed ${filingDate}. Risk signals: ${riskSignals.join(", ")}.`;
-        } else {
-          keyFindings = `${filingType} filed ${filingDate}. No significant risk signals detected.`;
+        } catch {
+          // Filing text fetch failure is non-fatal — still return the filing
         }
 
         results.push({

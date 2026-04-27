@@ -32,6 +32,7 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.98.0";
 import { fetchSecFilings } from "../_shared/skills/integration/fetch-sec-filing.ts";
+import { deliverMessage, LogProvider } from "../_shared/skills/integration/deliver-message.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -145,17 +146,16 @@ Deno.serve(async (req) => {
         let hasNewAlerts = false;
 
         for (const filing of filings) {
-          // Dedup: skip if this accession number already processed for this customer
+          // Dedup: accession_number is globally unique in EDGAR
           const { data: existing } = await supabase
             .from("sec_filings")
             .select("id")
-            .eq("customer_id", customerId)
             .eq("accession_number", filing.accession_number)
             .limit(1);
 
           if (existing && existing.length > 0) continue;
 
-          // Insert to sec_filings
+          // Insert to sec_filings (ON CONFLICT DO NOTHING via unique index)
           await supabase.from("sec_filings").insert({
             customer_id:      customerId,
             filing_type:      filing.filing_type,
@@ -163,6 +163,7 @@ Deno.serve(async (req) => {
             key_findings:     filing.key_findings,
             risk_signals:     filing.risk_signals,
             accession_number: filing.accession_number,
+            document_url:     filing.document_url,
             agent_name,
             is_demo:          DEMO_MODE,
           });
@@ -219,6 +220,23 @@ Deno.serve(async (req) => {
           });
 
           // Compose email alert
+          const alertSubject = `SEC Alert: ${companyName} (${customer.ticker ?? cik}) — ${filing.risk_signals.length} risk signal(s) in ${filing.filing_type}`;
+          const alertBody = [
+            `SEC Filing Alert`,
+            `Company: ${companyName} (${customer.ticker ?? "N/A"})`,
+            `CIK: ${cik}`,
+            `Filing Type: ${filing.filing_type}`,
+            `Filing Date: ${filing.filing_date}`,
+            ``,
+            `Risk Signals: ${filing.risk_signals.join(", ")}`,
+            ``,
+            `Key Findings: ${filing.key_findings || "(text not extracted)"}`,
+            ``,
+            `Filing URL: ${filing.document_url}`,
+            ``,
+            `Please review the filing and assess impact on credit exposure.`,
+          ].join("\n");
+
           const { error: msgError } = await supabase.from("agent_messages").insert({
             run_id,
             agent_name,
@@ -228,26 +246,18 @@ Deno.serve(async (req) => {
             recipient_type:  "credit_committee",
             recipient_name:  "Credit Analysis Team",
             recipient_email: CREDIT_TEAM_EMAIL,
-            subject:         `SEC Alert: ${companyName} (${customer.ticker ?? cik}) — ${filing.risk_signals.length} risk signal(s) in ${filing.filing_type}`,
-            body: [
-              `SEC Filing Alert`,
-              `Company: ${companyName} (${customer.ticker ?? "N/A"})`,
-              `CIK: ${cik}`,
-              `Filing Type: ${filing.filing_type}`,
-              `Filing Date: ${filing.filing_date}`,
-              ``,
-              `Risk Signals: ${filing.risk_signals.join(", ")}`,
-              ``,
-              `Key Findings: ${filing.key_findings}`,
-              ``,
-              `Filing URL: ${filing.document_url}`,
-              ``,
-              `Please review the filing and assess impact on credit exposure.`,
-            ].join("\n"),
-            status:  "draft",
-            is_demo: DEMO_MODE,
+            subject:         alertSubject,
+            body:            alertBody,
+            status:          "draft",
+            is_demo:         DEMO_MODE,
           });
           if (!msgError) messagesComposed++;
+
+          // Attempt delivery (LogProvider fallback always succeeds)
+          await deliverMessage(
+            { channel: "email", recipient: CREDIT_TEAM_EMAIL, subject: alertSubject, body: alertBody },
+            [new LogProvider()]
+          );
         }
 
         // Update sec_monitoring with latest alert state + last_checked_at
