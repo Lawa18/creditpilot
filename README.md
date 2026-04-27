@@ -31,16 +31,16 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram and
 ## Agents
 
 ### AR Aging Agent (`ar-aging-agent`)
-Scans all customers for overdue AR buckets and high credit utilisation. For customers in the 61–90 day and 90+ day buckets it composes dunning letters (Claude-generated, staged 1–4 by severity) and Teams alerts, and proposes credit limit reductions for human approval. Uses payment history analysis and Altman Z-score zones to calibrate severity.
+Pure signal agent — scans AR data for overdue buckets, utilization, and concentration risk. Writes `credit_events` only. Composes dunning letters (Claude-generated, staged 1–4 by severity) and Teams alerts.
 
 ### News Monitor Agent (`news-monitor-agent`)
 Scans unreviewed rows in the `negative_news` table (pre-populated from news sources). Classifies severity, composes Teams alerts for critical and high severity items, and writes credit events for downstream CIA processing. In production, news ingestion is handled separately — the agent processes what is already in the database.
 
 ### SEC Filing Monitor Agent (`sec-monitor-agent`)
-Monitors companies in the `sec_monitoring` table for active SEC filing alerts. Reads the `v_sec_monitoring_dashboard` view and writes credit events for detected risk signals: going concern warnings, covenant waivers, CEO departures, and cash runway issues. Composes email alerts to the credit analysis team.
+Fetches live filings from the SEC EDGAR API (free, no API key required). Detects risk signals via keyword matching across 15 signal types. Deduplicates by accession number. Composes email alerts to the credit analysis team via `deliver-message.ts`.
 
 ### Credit Intelligence Agent (`cia-agent`)
-Synthesises signals from all three monitoring agents into structured intelligence. Operates in three modes: `briefing` (daily portfolio summary, calls Claude Opus), `question` (answers a specific credit question with cited sources, calls Claude Sonnet), and `suggestions` (generates relevant follow-up questions, calls Claude Haiku). Writes `DAILY_BRIEFING` and `COMPOSITE_RISK` events back to `credit_events` and marks source events as processed.
+Synthesises signals from all three monitoring agents into structured intelligence. Operates in three modes: `briefing` (daily portfolio summary, calls Claude Opus), `question` (answers a specific credit question with cited sources, calls Claude Sonnet), and `suggestions` (generates relevant follow-up questions, calls Claude Haiku). Writes `DAILY_BRIEFING` and `COMPOSITE_RISK` events back to `credit_events` and marks source events as processed. Owns all credit limit decisioning — runs `assessCompositeRisk` and `calculateCreditLimitProposal` skills, writes `pending_actions`.
 
 See [docs/AGENTS.md](docs/AGENTS.md) for full agent documentation including event taxonomies.
 
@@ -143,6 +143,12 @@ Set these in the Supabase dashboard → Edge Functions → Manage secrets:
 | `DEMO_MODE` | Yes | `true` replays seed data without API calls (except CIA question mode) |
 | `SUPABASE_URL` | Auto | Set automatically by Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Auto | Set automatically by Supabase |
+| `CREDIT_TEAM_EMAIL` | No | Recipient for SEC alert emails (defaults to `credit-team@company.com`) |
+| `SENDGRID_API_KEY` | No | Enables email delivery via SendGrid |
+| `TEAMS_WEBHOOK_URL` | No | Enables Teams delivery via incoming webhook |
+| `SLACK_WEBHOOK_URL` | No | Enables Slack delivery via incoming webhook |
+
+No delivery keys are needed for demo mode — `LogProvider` fallback logs all messages to the console.
 
 ---
 
@@ -212,7 +218,10 @@ creditpilot/
 │   ├── functions/
 │   │   ├── _shared/
 │   │   │   └── skills/            # Reusable skill functions
-│   │   │       ├── analytical/    # analyse-payment-behaviour, calculate-credit-limit-proposal
+│   │   │       ├── analytical/    # analyse-payment-behaviour, calculate-credit-limit-proposal,
+│   │   │       │                  #   assess-composite-risk, aggregate-credit-scores,
+│   │   │       │                  #   detect-rating-change, calculate-altman-z
+│   │   │       ├── integration/   # fetch-sec-filing, deliver-message, fetch-credit-score
 │   │   │       └── generative/    # compose-dunning-letter, compose-teams-alert
 │   │   ├── ar-aging-agent/        # AR Aging monitoring agent
 │   │   ├── news-monitor-agent/    # Negative news monitoring agent
@@ -223,6 +232,18 @@ creditpilot/
 ├── CONTRIBUTING.md
 └── README.md
 ```
+
+---
+
+## Testing
+
+The skill layer has **127 unit tests** across 10 test files:
+
+```bash
+npx vitest run supabase/functions/_shared/skills
+```
+
+Tests cover: `normalise-credit-signal` (42), `aggregate-credit-scores` (15), `detect-rating-change` (14), `classify-news` (12), `assess-composite-risk` (9), `calculate-credit-limit-proposal` (9), `calculate-altman-z` (9), `analyse-payment-behaviour` (7), `fetch-sec-filing` (5), `deliver-message` (5).
 
 ---
 

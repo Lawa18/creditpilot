@@ -40,6 +40,17 @@ In the Supabase dashboard → Edge Functions → Manage secrets, add:
 
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are injected automatically by Supabase — do not set them manually.
 
+### Optional delivery secrets
+
+These enable real message delivery. If not set, all messages fall back to `LogProvider` (console logging). No delivery keys are needed for demo mode.
+
+| Secret | Description |
+|--------|-------------|
+| `CREDIT_TEAM_EMAIL` | Recipient for SEC alert emails (defaults to `credit-team@company.com`) |
+| `SENDGRID_API_KEY` | Enables email delivery via SendGrid |
+| `TEAMS_WEBHOOK_URL` | Enables Teams delivery via incoming webhook |
+| `SLACK_WEBHOOK_URL` | Enables Slack delivery via incoming webhook |
+
 ---
 
 ## 4. Deploy edge functions
@@ -120,3 +131,9 @@ In Vercel → Project → Settings → Domains, add your domain and follow the D
 | `DEMO_MODE` | Yes | `true` replays seed data without API calls (except CIA question mode) |
 | `SUPABASE_URL` | Auto | Set automatically by Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Auto | Set automatically by Supabase |
+| `CREDIT_TEAM_EMAIL` | No | Recipient for SEC alert emails (defaults to `credit-team@company.com`) |
+| `SENDGRID_API_KEY` | No | Enables email delivery via SendGrid |
+| `TEAMS_WEBHOOK_URL` | No | Enables Teams delivery via incoming webhook |
+| `SLACK_WEBHOOK_URL` | No | Enables Slack delivery via incoming webhook |
+
+No delivery keys are needed for demo mode — `LogProvider` fallback logs all messages to the console.

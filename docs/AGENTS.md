@@ -12,7 +12,6 @@ Scans all customers for overdue AR buckets and high credit utilisation. For cust
 
 - Composes dunning letters (Claude-generated, staged 1–4 by severity)
 - Composes Microsoft Teams alerts for accounts with >$100K over 90 days
-- Proposes credit limit reductions for human approval
 
 ### Trigger
 
@@ -60,7 +59,7 @@ Manual (Run Agent button in the AR Aging page) or programmatic.
 
 ### Demo mode
 
-Returns a pre-baked run log (49 customers scanned, 19 conditions found, 5 messages, 3 actions). Resets `pending_actions` for the seed run to `pending` status.
+Returns a pre-baked run log (49 customers scanned, 19 conditions found, 5 messages, 0 actions). Pure signal agent — does not write `pending_actions`.
 
 ---
 
@@ -151,9 +150,12 @@ Manual (Run Agent button in the SEC Filings page) or programmatic.
 | `sec_filings` | Dedup check by `accession_number` before insert |
 | SEC EDGAR API | `https://data.sec.gov/submissions/CIK{paddedCik}.json` — free, no key |
 
-### Skill used
+### Skills used
 
-`fetch-sec-filing.ts` (`EdgarProvider`) — fetches submissions JSON, parses filing metadata, fetches document text (5000 chars), detects risk keywords via `detectRiskSignals`.
+| Skill | Purpose |
+|-------|---------|
+| `fetch-sec-filing.ts` (`EdgarProvider`) | Fetches submissions JSON, parses filing metadata, fetches filing document text (10 000 chars), detects risk keywords via `detectRiskSignals` |
+| `deliver-message.ts` (`LogProvider` fallback) | Delivers composed alert emails; falls back to console logging if no provider keys are configured |
 
 ### Outputs
 
@@ -170,7 +172,7 @@ Manual (Run Agent button in the SEC Filings page) or programmatic.
 
 ### Deduplication
 
-`sec_filings` has a unique index on `(customer_id, accession_number)`. The agent pre-checks before insert and skips known filings. Safe on repeated runs.
+`sec_filings` has a global unique index on `accession_number` (EDGAR accession numbers are globally unique across all filers). The agent pre-checks before insert and skips known filings. Safe on repeated runs.
 
 ### Severity logic
 
@@ -186,7 +188,7 @@ Manual (Run Agent button in the SEC Filings page) or programmatic.
 |------------------------|--------|
 | going concern, substantial doubt | `going_concern_warning` |
 | covenant waiver, waiver of covenant, covenant breach | `covenant_waiver` |
-| chief executive, ceo resigned, ceo departure | `CEO_departure` |
+| chief executive officer resigned, ceo resigned, ceo departure | `CEO_departure` |
 | cash runway | `cash_runway_<3_quarters` |
 | material weakness | `material_weakness` |
 | restatement | `restatement` |
@@ -238,6 +240,13 @@ Synthesises signals from all three monitoring agents into structured intelligenc
 ### Data sources (question mode)
 
 - `credit_events` — keyword-filtered on `title` and `description` (up to 3 keywords, ilike); falls back to most recent 15 if <2 results
+
+### Skills used (briefing mode)
+
+| Skill | Purpose |
+|-------|---------|
+| `assess-composite-risk` | Adjusts utilization threshold based on active signals from multiple agents |
+| `calculate-credit-limit-proposal` | Determines credit limit reduction amount when composite risk recommends action |
 
 ### Outputs (briefing mode)
 

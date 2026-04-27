@@ -75,6 +75,13 @@ Reusable logic in `supabase/functions/_shared/skills/`:
 |-------|------|---------|
 | `analyse-payment-behaviour` | Analytical | Calculates on-time rate, DSO, payment health score from transaction history |
 | `calculate-credit-limit-proposal` | Analytical | Determines whether to reduce a credit limit and by how much |
+| `assess-composite-risk` | Analytical | Adjusts utilization threshold based on active signals from multiple agents |
+| `aggregate-credit-scores` | Analytical | Weighted aggregation of credit scores from multiple providers |
+| `detect-rating-change` | Analytical | Detects credit rating upgrades and downgrades against configured delta thresholds |
+| `calculate-altman-z` | Analytical | Calculates Altman Z-score from financial statement data |
+| `fetch-sec-filing` | Integration | Fetches recent SEC filings via EDGAR API; detects risk keywords via `detectRiskSignals` |
+| `deliver-message` | Integration | Provider-agnostic message delivery; `LogProvider` fallback always succeeds |
+| `fetch-credit-score` | Integration | Provider-agnostic credit score retrieval (stub — ready for API keys) |
 | `compose-dunning-letter` | Generative | Calls Claude to draft a staged (1–4) dunning letter |
 | `compose-teams-alert` | Generative | Composes a Microsoft Teams adaptive card alert |
 
@@ -95,7 +102,7 @@ Supabase Postgres. Schema defined in `supabase/migrations/` (14 files). PostgRES
 | `agent_runs` | Audit log of every agent execution |
 | `negative_news` | News items for the News Monitor Agent to process |
 | `sec_monitoring` | Companies being watched for SEC filing alerts |
-| `credit_metrics` | Altman Z-score and other financial metrics per customer |
+| `sec_filings` | Fetched SEC filings with extracted risk signals and document URL |
 | `payment_transactions` | Payment history used by the AR Aging Agent |
 
 ### Key views
@@ -103,7 +110,6 @@ Supabase Postgres. Schema defined in `supabase/migrations/` (14 files). PostgRES
 | View | Purpose |
 |------|---------|
 | `v_ar_aging_current` | AR aging buckets per customer (current snapshot) |
-| `v_sec_monitoring_dashboard` | SEC monitoring status with alert flags per company |
 
 ### Demo data isolation
 
@@ -122,10 +128,9 @@ Frontend calls supabase.functions.invoke('ar-aging-agent', ...)
     ▼
 ar-aging-agent reads v_ar_aging_current + payment_transactions
     │
-    ├──► writes credit_events (OVERDUE_BUCKET_*, CONCENTRATION_RISK)
-    ├──► writes agent_messages (dunning letters, Teams alerts)
-    └──► writes pending_actions (CREDIT_LIMIT_REDUCTION proposals)
-    │
+    ├──► writes credit_events (OVERDUE_BUCKET_*, HIGH_UTILIZATION, CONCENTRATION_RISK)
+    └──► writes agent_messages (dunning letters, Teams alerts)
+    │        ↑ Pure signal agent — does not write pending_actions
     ▼
 Frontend calls supabase.functions.invoke('cia-agent', {mode:'briefing'})
     │
@@ -135,12 +140,16 @@ cia-agent reads credit_events where cia_processed = false
     ├──► calls Claude Opus (live) or returns DEMO_BRIEFING
     ├──► writes DAILY_BRIEFING event
     ├──► writes COMPOSITE_RISK events for multi-signal customers
+    ├──► runs assessCompositeRisk + calculateCreditLimitProposal per customer
+    ├──► writes pending_actions (CREDIT_LIMIT_REDUCTION proposals)  ← sole owner
     └──► marks source events cia_processed = true
     │
     ▼
 Frontend queries credit_events, pending_actions, agent_messages
 and renders results in the React dashboard
 ```
+
+**Sensing vs Decision separation:** AR aging, news, and SEC agents are pure signal agents — they write `credit_events` only. The CIA agent is the sole owner of `pending_actions`. This ensures all credit limit decisions pass through a single synthesis layer before reaching the human approval queue.
 
 ---
 
