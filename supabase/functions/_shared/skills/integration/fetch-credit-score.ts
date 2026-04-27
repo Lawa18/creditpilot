@@ -42,8 +42,7 @@ export class DnBProvider implements CreditScoreProvider {
     _duns?: string
   ): Promise<CreditSignal | null> {
     if (!this.apiKey) return null;
-    // TODO: implement when D&B API access available
-    // POST https://plus.dnb.com/v1/data/duns/{duns}
+    // Wire up: POST https://plus.dnb.com/v1/data/duns/{duns}
     // Response: data.organization.paydexScore.score (1–100)
     return null;
   }
@@ -62,8 +61,7 @@ export class CofaceProvider implements CreditScoreProvider {
     _identifier?: string
   ): Promise<CreditSignal | null> {
     if (!this.apiKey) return null;
-    // TODO: implement when Coface API access available
-    // Score range: 0–10 where 10 = best
+    // Wire up Coface API — score range 0–10 where 10 = best
     return null;
   }
 }

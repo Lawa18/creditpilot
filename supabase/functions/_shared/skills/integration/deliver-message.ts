@@ -64,8 +64,7 @@ export class EmailProvider implements MessageProvider {
     if (!this.apiKey) {
       return { success: false, provider: this.name, error: "No API key" };
     }
-    // TODO: implement SendGrid/Postmark delivery when API key available
-    // POST https://api.sendgrid.com/v3/mail/send
+    // Wire up: POST https://api.sendgrid.com/v3/mail/send
     return { success: false, provider: this.name, error: "Not implemented yet" };
   }
 }
@@ -83,8 +82,7 @@ export class TeamsProvider implements MessageProvider {
     if (!this.webhookUrl) {
       return { success: false, provider: this.name, error: "No webhook URL" };
     }
-    // TODO: implement Teams adaptive card delivery
-    // POST this.webhookUrl with { '@type': 'MessageCard', text: message.body }
+    // Wire up: POST this.webhookUrl with { '@type': 'MessageCard', text: message.body }
     return { success: false, provider: this.name, error: "Not implemented yet" };
   }
 }
@@ -102,8 +100,7 @@ export class SlackProvider implements MessageProvider {
     if (!this.webhookUrl) {
       return { success: false, provider: this.name, error: "No webhook URL" };
     }
-    // TODO: implement Slack delivery
-    // POST this.webhookUrl with { text: message.body }
+    // Wire up: POST this.webhookUrl with { text: message.body }
     return { success: false, provider: this.name, error: "Not implemented yet" };
   }
 }
