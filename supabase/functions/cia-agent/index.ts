@@ -7,7 +7,9 @@
  * briefing (default)
  *   Reads unprocessed credit_events (cia_processed = false), calls Claude Opus
  *   to produce a portfolio-wide daily briefing, writes DAILY_BRIEFING and
- *   COMPOSITE_RISK events, and marks source events cia_processed = true.
+ *   COMPOSITE_RISK events, marks source events cia_processed = true, then
+ *   runs assessCompositeRisk + calculateCreditLimitProposal for each at-risk
+ *   customer and writes pending_actions for human approval.
  *   Demo: returns DEMO_BRIEFING constant; no API call.
  *
  * question
@@ -28,7 +30,13 @@
  * Response (suggestions): { suggestions: string[] }
  *
  * Tables read:  credit_events, customers, agent_runs
- * Tables written (briefing): credit_events (DAILY_BRIEFING, COMPOSITE_RISK*), agent_runs
+ * Tables written (briefing): credit_events (DAILY_BRIEFING, COMPOSITE_RISK*),
+ *                             pending_actions (credit limit reductions), agent_runs
+ *
+ * Skills used: assessCompositeRisk, calculateCreditLimitProposal
+ *
+ * Credit limit decisioning: CIA agent is the sole owner of pending_actions.
+ * Sensing agents (AR aging, news, SEC) write credit_events only.
  *
  * Demo mode: Controlled by DEMO_MODE=true Supabase secret.
  */
@@ -38,6 +46,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.27.0";
+import { assessCompositeRisk } from "../_shared/skills/analytical/assess-composite-risk.ts";
+import { calculateCreditLimitProposal } from "../_shared/skills/analytical/calculate-credit-limit-proposal.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -90,7 +100,7 @@ interface CIARequest {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DEMO_SEED_RUN_ID = "cia-demo-seed-00000000-0000-0000-0000-000000000001";
+const DEMO_SEED_RUN_ID = "00000099-0000-0000-0000-000000000001";
 
 const CACHE_TTL: Record<string, number> = {
   "ar-aging-agent":  24 * 60 * 60 * 1000,
@@ -327,6 +337,7 @@ serve(async (req: Request) => {
         .from("credit_events")
         .select("id, event_type, severity, source_agent, title, description, created_at, customers!left(id, company_name, ticker)")
         .or(orFilter)
+        .eq("is_demo", DEMO_MODE)
         .order("created_at", { ascending: false })
         .limit(15);
 
@@ -338,6 +349,7 @@ serve(async (req: Request) => {
       const { data: fallback } = await supabaseClient
         .from("credit_events")
         .select("id, event_type, severity, source_agent, title, description, created_at, customers!left(id, company_name, ticker)")
+        .eq("is_demo", DEMO_MODE)
         .order("created_at", { ascending: false })
         .limit(15);
       events = fallback ?? [];
@@ -466,6 +478,7 @@ Only include events in sources that directly support your answer.`;
     .from("credit_events")
     .select("*")
     .eq("cia_processed", false)
+    .eq("is_demo", DEMO_MODE)
     .order("created_at", { ascending: false })
     .limit(100);
 
@@ -593,6 +606,65 @@ Only include events in sources that directly support your answer.`;
     if (insertError) console.error("Assessment insert error:", insertError);
   }
 
+  // 6b. Credit limit decisioning — run assessCompositeRisk + calculateCreditLimitProposal
+  //     for each customer with signals, write pending_actions for human approval.
+  const pendingActions = [];
+
+  for (const [custId, custEvents] of Object.entries(groupedEvents)) {
+    if (custId === "__portfolio__") continue;
+
+    const customer = (customers ?? []).find((c: any) => c.id === custId);
+    if (!customer?.credit_limit) continue;
+
+    const agentsSeen = [...new Set(custEvents.map((e: any) => e.source_agent as string))];
+    const activeEventTypes = [...new Set(custEvents.map((e: any) => e.event_type as string))];
+    const creditScore: number | null = (custEvents[0] as any)?.credit_rating_score ?? null;
+    const utilizationPct: number = (custEvents.find((e: any) => e.payload?.utilization_pct != null) as any)?.payload?.utilization_pct ?? 0;
+    const daysOver90: number = (custEvents.find((e: any) => e.payload?.buckets?.bucket_over_90 != null) as any)?.payload?.buckets?.bucket_over_90 ?? 0;
+    const currentExposure: number = customer.current_balance ?? 0;
+
+    const riskAssessment = assessCompositeRisk({
+      utilization_pct: utilizationPct,
+      credit_score: creditScore,
+      active_event_types: activeEventTypes,
+      agents_flagging: agentsSeen,
+    });
+
+    if (!riskAssessment.recommend_action) continue;
+
+    const proposal = calculateCreditLimitProposal({
+      current_limit: customer.credit_limit,
+      current_exposure: currentExposure,
+      days_over_90: daysOver90,
+      utilization_pct: utilizationPct,
+      credit_score: creditScore,
+    });
+
+    if (proposal.action !== "reduce") continue;
+
+    pendingActions.push({
+      customer_id: custId,
+      agent_name: "cia-agent",
+      action_type: "CREDIT_LIMIT_REDUCTION",
+      status: "pending",
+      current_value: customer.credit_limit,
+      proposed_value: proposal.proposed_limit,
+      reduction_pct: proposal.reduction_pct,
+      rationale: `${riskAssessment.rationale} ${proposal.rationale}`.trim(),
+      severity: riskAssessment.severity,
+      source_event_ids: custEvents.map((e: any) => e.id),
+      run_id: runId,
+      is_demo: DEMO_MODE,
+    });
+  }
+
+  if (pendingActions.length > 0) {
+    const { error: paError } = await supabaseClient
+      .from("pending_actions")
+      .insert(pendingActions);
+    if (paError) console.error("pending_actions insert error:", paError);
+  }
+
   // 7. Mark source events as processed
   const eventIds = (events as CreditEvent[]).map(e => e.id);
   const { error: markError } = await supabaseClient
@@ -608,6 +680,7 @@ Only include events in sources that directly support your answer.`;
     briefing,
     events_processed: events.length,
     composite_risks_detected: assessmentEvents.filter(e => e.event_type !== "DAILY_BRIEFING").length,
+    pending_actions_created: pendingActions.length,
     stale_agents: staleAgents,
     messages: [{ role: "assistant", content: briefing }],
   });
