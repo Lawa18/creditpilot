@@ -1,30 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { DEMO_MODE } from "@/lib/constants";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { Badge } from "@/components/ui/badge";
-import { Brain, ExternalLink, ShieldAlert } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Progress } from "@/components/ui/progress";
-
-const getRiskColor = (score: number | null) => {
-  if (score == null) return "text-muted-foreground";
-  if (score >= 70) return "text-severity-critical";
-  if (score >= 40) return "text-agent-aging";
-  return "text-risk-current";
-};
-
-const getRiskLabel = (score: number | null) => {
-  if (score == null) return "Not analyzed";
-  if (score >= 70) return "High Risk";
-  if (score >= 40) return "Moderate";
-  return "Low Risk";
-};
+import { ExternalLink, ShieldAlert } from "lucide-react";
 
 export default function SecFilings() {
-  const { data: dashboard, isLoading: loadingDashboard } = useQuery({
-    queryKey: ["sec-dashboard"],
+  const { data: monitoring, isLoading } = useQuery({
+    queryKey: ["sec-monitoring"],
     queryFn: async () => {
-      const { data } = await supabase.from("v_sec_monitoring_dashboard").select("*");
+      const { data } = await supabase
+        .from("sec_monitoring")
+        .select("*, customers!inner(company_name, ticker)")
+        .eq("is_demo", DEMO_MODE)
+        .order("alert_triggered", { ascending: false });
       return data ?? [];
     },
   });
@@ -35,15 +24,17 @@ export default function SecFilings() {
       const { data } = await supabase
         .from("credit_events")
         .select("customer_id, event_type, description, severity")
-        .eq("source_agent", "sec_monitor_agent");
+        .eq("source_agent", "sec_monitor_agent")
+        .eq("is_demo", DEMO_MODE);
       return data ?? [];
     },
   });
 
   const SEVERITY_RANK: Record<string, number> = { critical: 4, high: 3, medium: 2, low: 1 };
 
-  // Group by customer_id: collect unique event_types and pick highest-severity description
-  const eventsByCustomer = (secEvents ?? []).reduce<Record<string, { types: string[]; description: string | null; bestRank: number }>>((acc, e: any) => {
+  const eventsByCustomer = (secEvents ?? []).reduce<
+    Record<string, { types: string[]; description: string | null; bestRank: number }>
+  >((acc, e: any) => {
     if (!acc[e.customer_id]) acc[e.customer_id] = { types: [], description: null, bestRank: -1 };
     if (!acc[e.customer_id].types.includes(e.event_type)) acc[e.customer_id].types.push(e.event_type);
     const incomingRank = SEVERITY_RANK[e.severity] ?? 0;
@@ -54,9 +45,9 @@ export default function SecFilings() {
     return acc;
   }, {});
 
-  if (loadingDashboard) return <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>;
+  if (isLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>;
 
-  if (!dashboard || dashboard.length === 0) {
+  if (!monitoring || monitoring.length === 0) {
     return (
       <div className="space-y-6">
         <div>
@@ -78,7 +69,8 @@ export default function SecFilings() {
       </div>
 
       <div className="space-y-4">
-        {(dashboard ?? []).map((d: any) => {
+        {(monitoring ?? []).map((d: any) => {
+          const customer = d.customers as { company_name: string; ticker: string | null };
           const customerEvents = eventsByCustomer[d.customer_id];
           const events = customerEvents?.types ?? [];
           const secUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=10-K&dateb=&owner=include&count=10`;
@@ -89,22 +81,14 @@ export default function SecFilings() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-foreground">
-                      {d.company_name}{" "}
-                      <span className="text-muted-foreground font-normal">{d.ticker}</span>
+                      {customer.company_name}{" "}
+                      <span className="text-muted-foreground font-normal">{customer.ticker}</span>
                     </p>
                     <p className="text-[10px] font-mono text-muted-foreground mt-0.5">CIK: {d.cik}</p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
-                    {d.ai_risk_score != null && (
-                      <div className="flex items-center gap-2">
-                        <Brain className="h-3.5 w-3.5 text-agent-sec" />
-                        <div className="w-16">
-                          <Progress value={d.ai_risk_score} className="h-1.5" />
-                        </div>
-                        <span className={cn("text-xs font-semibold", getRiskColor(d.ai_risk_score))}>
-                          {getRiskLabel(d.ai_risk_score)}
-                        </span>
-                      </div>
+                    {d.alert_triggered && (
+                      <Badge variant="destructive" className="text-[10px] h-5">Alert Active</Badge>
                     )}
                     <a
                       href={secUrl}
@@ -117,24 +101,30 @@ export default function SecFilings() {
                   </div>
                 </div>
 
-                {/* Filing dates */}
+                {/* Last checked + alert date */}
                 <div className="flex gap-6 mt-3 text-xs">
-                  <div><span className="text-muted-foreground">Last 10-K:</span> <span className="font-medium">{d.last_10k_date ?? "N/A"}</span></div>
-                  <div><span className="text-muted-foreground">Last 10-Q:</span> <span className="font-medium">{d.last_10q_date ?? "N/A"}</span></div>
+                  {d.last_checked_at && (
+                    <div>
+                      <span className="text-muted-foreground">Last checked:</span>{" "}
+                      <span className="font-medium">{d.last_checked_at.slice(0, 10)}</span>
+                    </div>
+                  )}
+                  {d.alert_date && (
+                    <div>
+                      <span className="text-muted-foreground">Alert date:</span>{" "}
+                      <span className="font-medium">{d.alert_date}</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Top credit event description */}
                 {customerEvents?.description && (
-                  <p className="text-xs text-muted-foreground mt-2 line-clamp-2">
-                    {customerEvents.description.slice(0, 150)}{customerEvents.description.length > 150 ? "…" : ""}
-                  </p>
-                )}
-
-                {/* AI summary */}
-                {d.ai_summary && (
                   <div className="mt-3 flex items-start gap-1.5 bg-agent-sec/5 rounded-lg p-2">
                     <ShieldAlert className="h-3.5 w-3.5 text-agent-sec mt-0.5 shrink-0" />
-                    <p className="text-xs text-muted-foreground">{d.ai_summary}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {customerEvents.description.slice(0, 150)}
+                      {customerEvents.description.length > 150 ? "…" : ""}
+                    </p>
                   </div>
                 )}
 

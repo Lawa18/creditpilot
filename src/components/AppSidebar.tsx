@@ -25,12 +25,14 @@ export function AppSidebar() {
         .from("negative_news")
         .select("id", { count: "exact", head: true })
         .eq("reviewed", false)
+        .eq("is_demo", DEMO_MODE)
         .then(({ count }) => count ?? 0);
 
       const { count: secCount } = await supabase
         .from("sec_filings")
         .select("id", { count: "exact", head: true })
-        .eq("reviewed", false);
+        .eq("reviewed", false)
+        .eq("is_demo", DEMO_MODE);
 
       return { news: newsCount, sec: secCount ?? 0 };
     },
@@ -49,7 +51,6 @@ export function AppSidebar() {
     <aside className="w-64 min-h-screen bg-sidebar flex flex-col shrink-0">
       <div className="p-5 border-b border-sidebar-border">
         <h1 className="text-sidebar-foreground font-semibold text-base">My Credit Pilot</h1>
-        <p className="text-sidebar-muted text-xs mt-0.5">Global Trading Solutions Inc</p>
       </div>
 
       <nav className="flex-1 p-3 space-y-0.5">

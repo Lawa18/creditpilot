@@ -39,6 +39,7 @@ export default function Actions() {
         .from("pending_actions")
         .select("*, customers(company_name, ticker, credit_limit)")
         .eq("status", "pending")
+        .eq("is_demo", DEMO_MODE)
         .order("created_at", { ascending: false });
       return data ?? [];
     },

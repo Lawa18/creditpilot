@@ -143,7 +143,7 @@ function CustomerDetail({ customer }: { customer: any }) {
     queryKey: ["customer-activity", customer.id],
     queryFn: async () => {
       const [news, events, actions] = await Promise.all([
-        supabase.from("negative_news").select("*").eq("customer_id", customer.id).order("created_at", { ascending: false }),
+        supabase.from("negative_news").select("*").eq("customer_id", customer.id).eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }),
         supabase.from("credit_events").select("*").eq("customer_id", customer.id).eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }),
         supabase.from("credit_actions").select("*").eq("customer_id", customer.id).order("created_at", { ascending: false }),
       ]);

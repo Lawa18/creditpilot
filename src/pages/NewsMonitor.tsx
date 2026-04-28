@@ -18,6 +18,7 @@ export default function NewsMonitor() {
       const { data } = await supabase
         .from("negative_news")
         .select("*, customers!inner(company_name, ticker)")
+        .eq("is_demo", DEMO_MODE)
         .order("news_date", { ascending: false });
       return data ?? [];
     },

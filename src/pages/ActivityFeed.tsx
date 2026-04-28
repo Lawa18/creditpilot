@@ -69,8 +69,8 @@ export default function ActivityFeed() {
     queryKey: ["activity-feed"],
     queryFn: async () => {
       const [newsRes, secRes, msgsRes, pendingRes] = await Promise.all([
-        supabase.from("negative_news").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(100),
-        supabase.from("sec_filings").select("*, customers!inner(company_name, ticker)").order("created_at", { ascending: false }).limit(50),
+        supabase.from("negative_news").select("*, customers!inner(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
+        supabase.from("sec_filings").select("*, customers!inner(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(50),
         supabase.from("agent_messages").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
         supabase.from("pending_actions").select("*, customers(company_name, ticker)").eq("is_demo", DEMO_MODE).order("created_at", { ascending: false }).limit(100),
       ]);
