@@ -665,6 +665,37 @@ Only include events in sources that directly support your answer.`;
     if (paError) console.error("pending_actions insert error:", paError);
   }
 
+  // 6c. Write risk_tags to customers table
+  //     For each customer CIA assessed, update risk_tags based on active signals.
+  for (const [custId, custEvents] of Object.entries(groupedEvents)) {
+    if (custId === "__portfolio__") continue;
+
+    const agentsSeen = new Set(custEvents.map((e: any) => e.source_agent));
+    const tags: string[] = [];
+
+    // Multi-signal convergence
+    if (agentsSeen.size >= 2) tags.push("MULTI_SIGNAL_RISK");
+    if (agentsSeen.size >= 3) tags.push("ALL_AGENTS_FLAGGED");
+
+    // Agent-specific signals
+    const eventTypes = custEvents.map((e: any) => e.event_type);
+    if (eventTypes.some((t: string) => t.includes("GOING_CONCERN")))          tags.push("GOING_CONCERN");
+    if (eventTypes.some((t: string) => t.includes("COVENANT_WAIVER")))        tags.push("SEC_ALERT");
+    if (eventTypes.some((t: string) => t.includes("NEGATIVE_NEWS")))          tags.push("NEGATIVE_NEWS");
+    if (eventTypes.some((t: string) => t.includes("CRITICAL_UTILIZATION")))   tags.push("CRITICAL_UTILIZATION");
+    if (eventTypes.some((t: string) => t.includes("HIGH_UTILIZATION")))       tags.push("HIGH_UTILIZATION");
+    if (eventTypes.some((t: string) => t.includes("OVERDUE_BUCKET_OVER_90"))) tags.push("OVERDUE_90_PLUS");
+    if (eventTypes.some((t: string) => t.includes("CONCENTRATION_RISK")))     tags.push("CONCENTRATION_RISK");
+    if (eventTypes.some((t: string) => t.includes("CREDIT_RATING_DOWNGRADE"))) tags.push("RATING_DOWNGRADE");
+
+    if (tags.length === 0) continue;
+
+    await supabaseClient
+      .from("customers")
+      .update({ risk_tags: tags, risk_tags_updated_at: new Date().toISOString() })
+      .eq("id", custId);
+  }
+
   // 7. Mark source events as processed
   const eventIds = (events as CreditEvent[]).map(e => e.id);
   const { error: markError } = await supabaseClient

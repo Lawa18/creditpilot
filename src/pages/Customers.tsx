@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { ScenarioBadge } from "@/components/ScenarioBadge";
-import { formatCurrency, formatPct } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { SkeletonTable } from "@/components/SkeletonCard";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -9,11 +10,28 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AgentPill } from "@/components/AgentPill";
-import { SeverityBadge } from "@/components/SeverityBadge";
 import { relativeTime } from "@/lib/format";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { DEMO_MODE } from "@/lib/constants";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function scoreColor(score: number | null) {
+  if (score == null) return "";
+  if (score >= 80) return "text-risk-current";
+  if (score >= 60) return "text-agent-aging";
+  if (score >= 40) return "text-severity-high";
+  return "text-severity-critical";
+}
+
+function signalDotColor(severity: string) {
+  if (severity === "critical" || severity === "high") return "bg-severity-critical";
+  if (severity === "medium") return "bg-agent-aging";
+  return "bg-muted-foreground";
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function Customers() {
   const [search, setSearch] = useState("");
@@ -25,7 +43,7 @@ export default function Customers() {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("*, credit_metrics(credit_score, d_and_b_rating, current_ratio)")
+        .select("*")
         .order("company_name");
       return data ?? [];
     },
@@ -46,9 +64,9 @@ export default function Customers() {
       <div className="flex gap-3">
         <Input placeholder="Search customers..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-64 h-8 text-xs" />
         <Select value={scenarioFilter} onValueChange={setScenarioFilter}>
-          <SelectTrigger className="w-48 h-8 text-xs"><SelectValue placeholder="All scenarios" /></SelectTrigger>
+          <SelectTrigger className="w-52 h-8 text-xs"><SelectValue placeholder="All risk categories" /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All scenarios</SelectItem>
+            <SelectItem value="all">All risk categories</SelectItem>
             <SelectItem value="normal_operations">Normal</SelectItem>
             <SelectItem value="payment_issues">Payment Issues</SelectItem>
             <SelectItem value="credit_deterioration">Credit Deterioration</SelectItem>
@@ -66,7 +84,7 @@ export default function Customers() {
             <thead className="bg-secondary/50 sticky top-0">
               <tr className="text-muted-foreground">
                 <th className="text-left p-3 font-medium">Company</th>
-                <th className="text-left p-3 font-medium">Scenario</th>
+                <th className="text-left p-3 font-medium">Risk Category</th>
                 <th className="text-right p-3 font-medium">Credit Limit</th>
                 <th className="text-right p-3 font-medium">Exposure</th>
                 <th className="text-right p-3 font-medium">Util%</th>
@@ -76,10 +94,8 @@ export default function Customers() {
             </thead>
             <tbody className="divide-y divide-border">
               {filtered.map((c: any) => {
-                const metrics = Array.isArray(c.credit_metrics) ? c.credit_metrics[0] : c.credit_metrics;
                 const util = c.credit_limit > 0 ? (c.current_exposure / c.credit_limit) * 100 : 0;
                 const score = c.credit_rating_score as number | null;
-                const scoreColor = score == null ? "" : score >= 80 ? "text-risk-current" : score >= 60 ? "text-agent-aging" : score >= 40 ? "text-severity-high" : "text-severity-critical";
                 return (
                   <tr key={c.id} className="hover:bg-secondary/30 cursor-pointer" onClick={() => setSelectedId(c.id)}>
                     <td className="p-3">
@@ -90,7 +106,7 @@ export default function Customers() {
                     <td className="p-3 text-right">{formatCurrency(c.credit_limit)}</td>
                     <td className="p-3 text-right">{formatCurrency(c.current_exposure)}</td>
                     <td className="p-3 text-right">{util.toFixed(1)}%</td>
-                    <td className={cn("p-3 text-right font-medium", scoreColor)}>
+                    <td className={cn("p-3 text-right font-medium", scoreColor(score))}>
                       {score ?? "—"}
                     </td>
                     <td className="p-3">
@@ -119,9 +135,9 @@ export default function Customers() {
   );
 }
 
-function CustomerDetail({ customer }: { customer: any }) {
-  const metrics = Array.isArray(customer.credit_metrics) ? customer.credit_metrics[0] : customer.credit_metrics;
+// ── Customer Detail Drawer ────────────────────────────────────────────────────
 
+function CustomerDetail({ customer }: { customer: any }) {
   const { data: invoices } = useQuery({
     queryKey: ["customer-invoices", customer.id],
     queryFn: async () => {
@@ -134,6 +150,20 @@ function CustomerDetail({ customer }: { customer: any }) {
     queryKey: ["customer-payments", customer.id],
     queryFn: async () => {
       const { data } = await supabase.from("payment_transactions").select("*").eq("customer_id", customer.id).order("payment_date", { ascending: false });
+      return data ?? [];
+    },
+  });
+
+  const { data: recentSignals } = useQuery({
+    queryKey: ["customer-signals", customer.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("credit_events")
+        .select("id, event_type, source_agent, severity, created_at")
+        .eq("customer_id", customer.id)
+        .eq("is_demo", DEMO_MODE)
+        .order("created_at", { ascending: false })
+        .limit(3);
       return data ?? [];
     },
   });
@@ -156,11 +186,17 @@ function CustomerDetail({ customer }: { customer: any }) {
   });
 
   const util = customer.credit_limit > 0 ? (customer.current_exposure / customer.credit_limit) * 100 : 0;
+  const score = customer.credit_rating_score as number | null;
+  const riskTags: string[] = customer.risk_tags ?? [];
+  const manualFlags: string[] = customer.flags ?? [];
 
   return (
     <div>
       <SheetHeader>
-        <SheetTitle className="text-foreground">{customer.company_name} <span className="text-muted-foreground font-normal">{customer.ticker}</span></SheetTitle>
+        <SheetTitle className="text-foreground">
+          {customer.company_name}{" "}
+          <span className="text-muted-foreground font-normal">{customer.ticker}</span>
+        </SheetTitle>
       </SheetHeader>
       <div className="mt-2 mb-4"><ScenarioBadge scenario={customer.scenario} /></div>
 
@@ -173,29 +209,17 @@ function CustomerDetail({ customer }: { customer: any }) {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 mt-4">
-          <div className="grid grid-cols-2 gap-3">
-            {(() => {
-              const s = customer.credit_rating_score as number | null;
-              const sc = s == null ? "text-foreground" : s >= 80 ? "text-risk-current" : s >= 60 ? "text-agent-aging" : s >= 40 ? "text-severity-high" : "text-severity-critical";
-              return (
-                <div className="bg-secondary/50 rounded-lg p-3">
-                  <p className="text-[10px] text-muted-foreground uppercase">Credit Score</p>
-                  <p className={cn("text-2xl font-bold", sc)}>{s ?? "—"}</p>
-                  {customer.credit_rating_source && (
-                    <p className="text-[10px] text-muted-foreground mt-0.5">{customer.credit_rating_source}</p>
-                  )}
-                </div>
-              );
-            })()}
-            <div className="bg-secondary/50 rounded-lg p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">D&B Rating</p>
-              <p className="text-lg font-bold text-foreground">{metrics?.d_and_b_rating ?? "—"}</p>
-            </div>
-            <div className="bg-secondary/50 rounded-lg p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Current Ratio</p>
-              <p className="text-lg font-bold text-foreground">{metrics?.current_ratio?.toFixed(1) ?? "—"}</p>
-            </div>
+          {/* Credit Score */}
+          <div className="bg-secondary/50 rounded-lg p-3">
+            <p className="text-[10px] text-muted-foreground uppercase">Credit Score</p>
+            <p className={cn("text-2xl font-bold", score == null ? "text-foreground" : scoreColor(score))}>
+              {score ?? "—"}
+            </p>
+            {customer.credit_rating_source && (
+              <p className="text-[10px] text-muted-foreground mt-0.5">{customer.credit_rating_source}</p>
+            )}
           </div>
+
           {/* Utilization Bar */}
           <div>
             <div className="flex justify-between text-xs mb-1">
@@ -203,14 +227,77 @@ function CustomerDetail({ customer }: { customer: any }) {
               <span className="font-medium">{formatCurrency(customer.current_exposure)} / {formatCurrency(customer.credit_limit)}</span>
             </div>
             <div className="h-2 bg-secondary rounded-full overflow-hidden">
-              <div className={cn("h-full rounded-full", util > 90 ? "bg-severity-critical" : util > 70 ? "bg-agent-aging" : "bg-risk-current")} style={{ width: `${Math.min(util, 100)}%` }} />
+              <div
+                className={cn("h-full rounded-full", util > 90 ? "bg-severity-critical" : util > 70 ? "bg-agent-aging" : "bg-risk-current")}
+                style={{ width: `${Math.min(util, 100)}%` }}
+              />
             </div>
           </div>
-          {customer.flags?.length > 0 && (
-            <div className="flex gap-1.5 flex-wrap">
-              {customer.flags.map((f: string) => <Badge key={f} variant="secondary" className="text-[10px]">{f.replace(/_/g, " ")}</Badge>)}
+
+          {/* Agent Tags */}
+          {riskTags.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Agent Signals</p>
+                {customer.risk_tags_updated_at && (
+                  <p className="text-[10px] text-muted-foreground">Updated {relativeTime(customer.risk_tags_updated_at)}</p>
+                )}
+              </div>
+              <div className="flex gap-1.5 flex-wrap">
+                {riskTags.map((tag: string) => (
+                  <span key={tag} className="inline-flex px-2 py-0.5 rounded text-[10px] font-medium bg-agent-aging text-white">
+                    {tag.replace(/_/g, " ")}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
+
+          {/* Recent Signals */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Recent Signals</p>
+              <Link
+                to={`/events?customer_id=${customer.id}`}
+                className="text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                View all →
+              </Link>
+            </div>
+            {(recentSignals ?? []).length === 0 ? (
+              <p className="text-xs text-muted-foreground">No recent signals</p>
+            ) : (
+              <div className="space-y-1">
+                {(recentSignals ?? []).map((s: any) => (
+                  <Link
+                    key={s.id}
+                    to={`/events?customer_id=${customer.id}`}
+                    className="flex items-center gap-2 text-xs hover:bg-secondary/50 rounded px-1 py-0.5 transition-colors"
+                  >
+                    <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", signalDotColor(s.severity))} />
+                    <span className="font-medium">{s.event_type.replace(/_/g, " ")}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <AgentPill agentName={s.source_agent} />
+                    <span className="text-muted-foreground ml-auto">{s.created_at.slice(0, 10)}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Manual Tags */}
+          {manualFlags.length > 0 && (
+            <div>
+              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Manual Tags</p>
+              <div className="flex gap-1.5 flex-wrap">
+                {manualFlags.map((f: string) => (
+                  <Badge key={f} variant="outline" className="text-[10px]">{f.replace(/_/g, " ")}</Badge>
+                ))}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Set by credit manager</p>
+            </div>
+          )}
+
           {customer.notes && <p className="text-xs text-muted-foreground">{customer.notes}</p>}
           <div className="text-xs text-muted-foreground space-y-1">
             <p>Account Manager: <span className="text-foreground">{customer.account_manager}</span></p>
