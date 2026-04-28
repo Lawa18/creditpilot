@@ -1,15 +1,56 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { RiskTierBadge } from "@/components/RiskTierBadge";
 import { formatCurrency, formatPct, relativeTime } from "@/lib/format";
 import { SkeletonCard, SkeletonTable } from "@/components/SkeletonCard";
 import { Button } from "@/components/ui/button";
-import { RefreshCw } from "lucide-react";
-import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { RefreshCw, Upload } from "lucide-react";
+import { useState, useRef } from "react";
 import { toast } from "sonner";
+import { DEMO_MODE } from "@/lib/constants";
+
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface UploadResult {
+  inserted: number;
+  skipped_rows: number;
+  errors: { row: number; message: string }[];
+  unmatched_customers: string[];
+  column_map: Record<string, string>;
+}
+
+interface MappingState {
+  available_columns: string[];
+  unmapped: string[];
+  current_map: Record<string, string>;
+}
+
+const REQUIRED_FIELDS = [
+  { key: "invoice_number",    label: "Invoice Number" },
+  { key: "customer_name",     label: "Customer Name" },
+  { key: "due_date",          label: "Due Date" },
+  { key: "outstanding_amount", label: "Outstanding Amount" },
+];
+
+// ── Main component ───────────────────────────────────────────────────────────
 
 export default function ArAging() {
+  const queryClient = useQueryClient();
   const [refreshing, setRefreshing] = useState(false);
+
+  // Upload dialog state
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadStep, setUploadStep] = useState<"pick" | "mapping" | "success">("pick");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [mappingState, setMappingState] = useState<MappingState | null>(null);
+  const [manualMap, setManualMap] = useState<Record<string, string>>({});
+  const [uploading, setUploading] = useState(false);
+  const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Queries ────────────────────────────────────────────────────────────────
 
   const { data: portfolio, isLoading: pLoading, refetch: refetchPortfolio } = useQuery({
     queryKey: ["ar-portfolio"],
@@ -42,6 +83,8 @@ export default function ArAging() {
     },
   });
 
+  // ── Handlers ───────────────────────────────────────────────────────────────
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -52,6 +95,81 @@ export default function ArAging() {
     } catch { toast.error("Failed to refresh"); }
     setRefreshing(false);
   };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setUploadFile(file);
+  };
+
+  const handleUpload = async () => {
+    if (!uploadFile) return;
+    setUploading(true);
+
+    try {
+      const resolvedMap = mappingState
+        ? { ...mappingState.current_map, ...manualMap }
+        : undefined;
+
+      const form = new FormData();
+      form.append("file", uploadFile);
+      if (resolvedMap) form.append("column_map", JSON.stringify(resolvedMap));
+      form.append("is_demo", String(DEMO_MODE));
+
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/ar-csv-upload`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+          body: form,
+        }
+      );
+
+      const json = await res.json();
+
+      if (res.status === 422 && json.unmapped_columns) {
+        // Needs manual column mapping
+        setMappingState({
+          available_columns: json.available_columns ?? [],
+          unmapped: json.unmapped_columns,
+          current_map: json.column_map ?? {},
+        });
+        const initMap: Record<string, string> = {};
+        for (const f of json.unmapped_columns) initMap[f] = "";
+        setManualMap(initMap);
+        setUploadStep("mapping");
+        setUploading(false);
+        return;
+      }
+
+      if (!res.ok) {
+        toast.error(json.error ?? "Upload failed");
+        setUploading(false);
+        return;
+      }
+
+      setUploadResult(json);
+      setUploadStep("success");
+      await Promise.all([refetchPortfolio(), refetchCustomers()]);
+      queryClient.invalidateQueries({ queryKey: ["customer-invoices"] });
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+
+    setUploading(false);
+  };
+
+  const handleDialogClose = () => {
+    setUploadOpen(false);
+    setUploadStep("pick");
+    setUploadFile(null);
+    setMappingState(null);
+    setManualMap({});
+    setUploadResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // ── Portfolio bar data ─────────────────────────────────────────────────────
 
   const total = Number(portfolio?.total_outstanding) || 1;
   const segments = [
@@ -68,10 +186,16 @@ export default function ArAging() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-foreground">AR Aging Agent</h1>
-        <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing} className="h-8 text-xs gap-2">
-          <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-          Refresh Aging
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8 text-xs gap-2">
+            <Upload className="h-3 w-3" />
+            Upload AR Data
+          </Button>
+          <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing} className="h-8 text-xs gap-2">
+            <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh Aging
+          </Button>
+        </div>
       </div>
 
       {/* Portfolio Bar */}
@@ -165,6 +289,142 @@ export default function ArAging() {
           </div>
         </div>
       </div>
+
+      {/* Upload Dialog */}
+      <Dialog open={uploadOpen} onOpenChange={(open) => { if (!open) handleDialogClose(); }}>
+        <DialogContent className="sm:max-w-md">
+          {uploadStep === "pick" && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Upload AR Data</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Upload a CSV export from your ERP. Column headers are auto-detected.
+                  Open and overdue invoices for matched customers will be replaced.
+                </p>
+                <div
+                  className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-foreground/40 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Upload className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {uploadFile ? uploadFile.name : "Click to select a CSV file"}
+                  </p>
+                  {uploadFile && (
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {(uploadFile.size / 1024).toFixed(1)} KB
+                    </p>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={handleFileChange}
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Accepted columns: Invoice Number, Customer Name, Invoice Date, Due Date,
+                  Amount, Outstanding, Currency, Days Overdue — and common aliases.
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={handleDialogClose}>Cancel</Button>
+                <Button size="sm" onClick={handleUpload} disabled={!uploadFile || uploading}>
+                  {uploading ? "Uploading…" : "Upload"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {uploadStep === "mapping" && mappingState && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Map Columns</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <p className="text-xs text-muted-foreground">
+                  Some required columns couldn't be auto-detected. Match them to your CSV headers below.
+                </p>
+                {mappingState.unmapped.map((field) => {
+                  const fieldDef = REQUIRED_FIELDS.find((f) => f.key === field);
+                  return (
+                    <div key={field} className="flex items-center gap-3">
+                      <span className="text-xs font-medium w-36 shrink-0">{fieldDef?.label ?? field}</span>
+                      <Select
+                        value={manualMap[field] ?? ""}
+                        onValueChange={(val) => setManualMap((m) => ({ ...m, [field]: val }))}
+                      >
+                        <SelectTrigger className="h-8 text-xs flex-1">
+                          <SelectValue placeholder="Select column…" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mappingState.available_columns.map((col) => (
+                            <SelectItem key={col} value={col} className="text-xs">{col}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  );
+                })}
+              </div>
+              <DialogFooter>
+                <Button variant="outline" size="sm" onClick={() => setUploadStep("pick")}>Back</Button>
+                <Button
+                  size="sm"
+                  onClick={handleUpload}
+                  disabled={uploading || mappingState.unmapped.some((f) => !manualMap[f])}
+                >
+                  {uploading ? "Uploading…" : "Upload"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+
+          {uploadStep === "success" && uploadResult && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Upload Complete</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-secondary/50 rounded-lg p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Invoices Imported</p>
+                    <p className="text-2xl font-bold text-foreground">{uploadResult.inserted}</p>
+                  </div>
+                  <div className="bg-secondary/50 rounded-lg p-3">
+                    <p className="text-[10px] text-muted-foreground uppercase">Rows Skipped</p>
+                    <p className="text-2xl font-bold text-foreground">{uploadResult.skipped_rows}</p>
+                  </div>
+                </div>
+                {uploadResult.unmatched_customers.length > 0 && (
+                  <div className="bg-secondary/30 rounded-lg p-3">
+                    <p className="text-xs font-medium mb-1">Unmatched customers</p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {uploadResult.unmatched_customers.join(", ")}
+                    </p>
+                  </div>
+                )}
+                {uploadResult.errors.length > 0 && (
+                  <div className="bg-secondary/30 rounded-lg p-3 max-h-32 overflow-y-auto">
+                    <p className="text-xs font-medium mb-1">Row errors</p>
+                    {uploadResult.errors.slice(0, 10).map((e) => (
+                      <p key={e.row} className="text-[10px] text-muted-foreground">Row {e.row}: {e.message}</p>
+                    ))}
+                    {uploadResult.errors.length > 10 && (
+                      <p className="text-[10px] text-muted-foreground">…and {uploadResult.errors.length - 10} more</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
+                <Button size="sm" onClick={handleDialogClose}>Done</Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
