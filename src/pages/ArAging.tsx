@@ -185,7 +185,7 @@ export default function ArAging() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-foreground">AR Aging Agent</h1>
+        <h1 className="text-xl font-semibold text-foreground">AR Aging</h1>
         <div className="flex items-center gap-2">
           <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8 text-xs gap-2">
             <Upload className="h-3 w-3" />

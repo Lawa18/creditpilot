@@ -25,7 +25,7 @@ export default function Customers() {
     queryFn: async () => {
       const { data } = await supabase
         .from("customers")
-        .select("*, credit_metrics(credit_score, altman_z_score, d_and_b_rating, current_ratio)")
+        .select("*, credit_metrics(credit_score, d_and_b_rating, current_ratio)")
         .order("company_name");
       return data ?? [];
     },
@@ -70,8 +70,7 @@ export default function Customers() {
                 <th className="text-right p-3 font-medium">Credit Limit</th>
                 <th className="text-right p-3 font-medium">Exposure</th>
                 <th className="text-right p-3 font-medium">Util%</th>
-                <th className="text-right p-3 font-medium">Score</th>
-                <th className="text-right p-3 font-medium">Altman Z</th>
+                <th className="text-right p-3 font-medium">Credit Score</th>
                 <th className="text-left p-3 font-medium">Flags</th>
               </tr>
             </thead>
@@ -79,7 +78,8 @@ export default function Customers() {
               {filtered.map((c: any) => {
                 const metrics = Array.isArray(c.credit_metrics) ? c.credit_metrics[0] : c.credit_metrics;
                 const util = c.credit_limit > 0 ? (c.current_exposure / c.credit_limit) * 100 : 0;
-                const z = metrics?.altman_z_score;
+                const score = c.credit_rating_score as number | null;
+                const scoreColor = score == null ? "" : score >= 80 ? "text-risk-current" : score >= 60 ? "text-agent-aging" : score >= 40 ? "text-severity-high" : "text-severity-critical";
                 return (
                   <tr key={c.id} className="hover:bg-secondary/30 cursor-pointer" onClick={() => setSelectedId(c.id)}>
                     <td className="p-3">
@@ -90,9 +90,8 @@ export default function Customers() {
                     <td className="p-3 text-right">{formatCurrency(c.credit_limit)}</td>
                     <td className="p-3 text-right">{formatCurrency(c.current_exposure)}</td>
                     <td className="p-3 text-right">{util.toFixed(1)}%</td>
-                    <td className="p-3 text-right">{metrics?.credit_score ?? "—"}</td>
-                    <td className={cn("p-3 text-right font-medium", z != null && z < 1.8 ? "text-severity-critical" : z != null && z < 3 ? "text-agent-aging" : "text-risk-current")}>
-                      {z?.toFixed(1) ?? "—"}
+                    <td className={cn("p-3 text-right font-medium", scoreColor)}>
+                      {score ?? "—"}
                     </td>
                     <td className="p-3">
                       <div className="flex gap-1 flex-wrap max-w-[200px]">
@@ -175,16 +174,19 @@ function CustomerDetail({ customer }: { customer: any }) {
 
         <TabsContent value="overview" className="space-y-4 mt-4">
           <div className="grid grid-cols-2 gap-3">
-            <div className="bg-secondary/50 rounded-lg p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Credit Score</p>
-              <p className="text-2xl font-bold text-foreground">{metrics?.credit_score ?? "—"}</p>
-            </div>
-            <div className="bg-secondary/50 rounded-lg p-3">
-              <p className="text-[10px] text-muted-foreground uppercase">Altman Z</p>
-              <p className={cn("text-2xl font-bold", metrics?.altman_z_score < 1.8 ? "text-severity-critical" : metrics?.altman_z_score < 3 ? "text-agent-aging" : "text-risk-current")}>
-                {metrics?.altman_z_score?.toFixed(1) ?? "—"}
-              </p>
-            </div>
+            {(() => {
+              const s = customer.credit_rating_score as number | null;
+              const sc = s == null ? "text-foreground" : s >= 80 ? "text-risk-current" : s >= 60 ? "text-agent-aging" : s >= 40 ? "text-severity-high" : "text-severity-critical";
+              return (
+                <div className="bg-secondary/50 rounded-lg p-3">
+                  <p className="text-[10px] text-muted-foreground uppercase">Credit Score</p>
+                  <p className={cn("text-2xl font-bold", sc)}>{s ?? "—"}</p>
+                  {customer.credit_rating_source && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{customer.credit_rating_source}</p>
+                  )}
+                </div>
+              );
+            })()}
             <div className="bg-secondary/50 rounded-lg p-3">
               <p className="text-[10px] text-muted-foreground uppercase">D&B Rating</p>
               <p className="text-lg font-bold text-foreground">{metrics?.d_and_b_rating ?? "—"}</p>
