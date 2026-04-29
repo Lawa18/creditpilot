@@ -34,7 +34,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram and
 Pure signal agent — scans AR data for overdue buckets, utilization, and concentration risk. Writes `credit_events` only. Composes dunning letters (Claude-generated, staged 1–4 by severity) and Teams alerts.
 
 ### News Monitor Agent (`news-monitor-agent`)
-Scans unreviewed rows in the `negative_news` table (pre-populated from news sources). Classifies severity, composes Teams alerts for critical and high severity items, and writes credit events for downstream CIA processing. In production, news ingestion is handled separately — the agent processes what is already in the database.
+Fetches live news via the Tavily API, classifies severity using Claude Haiku with strict JSON schema and confidence scoring, deduplicates by content fingerprint, and writes to negative_news and credit_events. Falls back to processing existing unreviewed rows if no Tavily API key is set.
 
 ### SEC Filing Monitor Agent (`sec-monitor-agent`)
 Fetches live filings from the SEC EDGAR API (free, no API key required). Detects risk signals via keyword matching across 15 signal types. Deduplicates by accession number. Composes email alerts to the credit analysis team via `deliver-message.ts`.
@@ -93,7 +93,7 @@ supabase link --project-ref your-project-ref
 supabase db push
 ```
 
-This runs all 14 migrations in `supabase/migrations/` in order, creating the full schema and seeding the demo data.
+This runs all migrations in `supabase/migrations/` in order, creating the full schema and seeding the demo data.
 
 ### 4. Set Supabase function secrets
 
@@ -154,7 +154,7 @@ No delivery keys are needed for demo mode — `LogProvider` fallback logs all me
 
 ## Database
 
-The schema is defined across 14 migration files in `supabase/migrations/`. Key tables:
+The schema is defined across SQL migration files in `supabase/migrations/`. Key tables:
 
 | Table | Purpose |
 |-------|---------|
@@ -174,7 +174,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for schema details and relation
 
 When `DEMO_MODE=true`, agents run against pre-seeded fictional data without burning API tokens or touching real customer data. A Reset Demo button in the Actions page restores all tables to their seed state and re-runs the agents.
 
-All demo rows are tagged with `is_demo = true`. This column exists on `credit_events`, `agent_messages`, and `pending_actions` — queries filter by it so demo and production data never mix.
+All demo rows are tagged with `is_demo = true`. This column exists on `credit_events`, `agent_messages`, `pending_actions`, `negative_news`, and `sec_monitoring` — queries filter by it so demo and production data never mix.
 
 See [docs/DEMO_MODE.md](docs/DEMO_MODE.md) for the full explanation.
 
@@ -220,14 +220,15 @@ creditpilot/
 │   │   │   └── skills/            # Reusable skill functions
 │   │   │       ├── analytical/    # analyse-payment-behaviour, calculate-credit-limit-proposal,
 │   │   │       │                  #   assess-composite-risk, aggregate-credit-scores,
-│   │   │       │                  #   detect-rating-change, calculate-altman-z
+│   │   │       │                  #   detect-rating-change, calculate-altman-z, parse-ar-csv
 │   │   │       ├── integration/   # fetch-sec-filing, deliver-message, fetch-credit-score
 │   │   │       └── generative/    # compose-dunning-letter, compose-teams-alert
 │   │   ├── ar-aging-agent/        # AR Aging monitoring agent
+│   │   ├── ar-csv-upload/         # CSV ingestion endpoint for AR data
 │   │   ├── news-monitor-agent/    # Negative news monitoring agent
 │   │   ├── sec-monitor-agent/     # SEC filing monitoring agent
 │   │   └── cia-agent/             # Credit Intelligence Agent (synthesis + Q&A)
-│   └── migrations/                # 14 SQL migration files (schema + seed data)
+│   └── migrations/                # SQL migration files (schema + seed data)
 ├── .env.example                   # Frontend env var template
 ├── CONTRIBUTING.md
 └── README.md
@@ -237,13 +238,13 @@ creditpilot/
 
 ## Testing
 
-The skill layer has **127 unit tests** across 10 test files:
+The skill layer has **152 unit tests** across 11 test files:
 
 ```bash
 npx vitest run supabase/functions/_shared/skills
 ```
 
-Tests cover: `normalise-credit-signal` (42), `aggregate-credit-scores` (15), `detect-rating-change` (14), `classify-news` (12), `assess-composite-risk` (9), `calculate-credit-limit-proposal` (9), `calculate-altman-z` (9), `analyse-payment-behaviour` (7), `fetch-sec-filing` (5), `deliver-message` (5).
+Tests cover: `normalise-credit-signal` (42), `aggregate-credit-scores` (15), `detect-rating-change` (14), `classify-news` (12), `assess-composite-risk` (9), `calculate-credit-limit-proposal` (9), `calculate-altman-z` (9), `analyse-payment-behaviour` (7), `parse-ar-csv` (8), `fetch-sec-filing` (5), `deliver-message` (5).
 
 ---
 
