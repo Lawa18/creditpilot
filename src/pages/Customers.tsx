@@ -180,7 +180,7 @@ function CustomerDetail({ customer }: { customer: any }) {
         ...(news.data ?? []).map((n) => ({ ...n, _type: "news" as const })),
         ...(events.data ?? []).map((e) => ({ ...e, _type: "event" as const })),
         ...(actions.data ?? []).map((a) => ({ ...a, _type: "action" as const })),
-      ].sort((a, b) => b.created_at.localeCompare(a.created_at));
+      ].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 10);
       return items;
     },
   });
@@ -357,6 +357,9 @@ function CustomerDetail({ customer }: { customer: any }) {
               </div>
             ))}
           </div>
+          {(activity ?? []).length > 0 && (
+            <p className="text-[10px] text-muted-foreground mt-3 text-center">Showing last 10 activities</p>
+          )}
         </TabsContent>
       </Tabs>
     </div>
