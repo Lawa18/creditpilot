@@ -334,7 +334,7 @@ function CustomerDetail({ customer }: { customer: any }) {
               <div key={p.id} className="bg-secondary/30 rounded-lg p-3 text-xs flex justify-between">
                 <div>
                   <p className="font-medium">{p.payment_date} · {formatCurrency(p.amount_paid)}</p>
-                  <p className="text-muted-foreground">{p.payment_method} · {p.days_to_pay}d to pay</p>
+                  <p className="text-muted-foreground">{p.payment_method} · Net {p.days_to_pay}</p>
                 </div>
                 <span className={cn("font-medium", (p.days_early_late ?? 0) >= 0 ? "text-risk-current" : "text-severity-critical")}>
                   {(p.days_early_late ?? 0) >= 0 ? `${p.days_early_late ?? 0}d early` : `${Math.abs(p.days_early_late)}d late`}
