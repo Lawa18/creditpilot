@@ -336,8 +336,8 @@ function CustomerDetail({ customer }: { customer: any }) {
                   <p className="font-medium">{p.payment_date} · {formatCurrency(p.amount_paid)}</p>
                   <p className="text-muted-foreground">{p.payment_method} · {p.days_to_pay}d to pay</p>
                 </div>
-                <span className={cn("font-medium", p.on_time ? "text-risk-current" : "text-severity-critical")}>
-                  {p.days_early_late != null && p.days_early_late >= 0 ? `${p.days_early_late}d early` : `${Math.abs(p.days_early_late ?? 0)}d late`}
+                <span className={cn("font-medium", (p.days_early_late ?? 0) >= 0 ? "text-risk-current" : "text-severity-critical")}>
+                  {(p.days_early_late ?? 0) >= 0 ? `${p.days_early_late ?? 0}d early` : `${Math.abs(p.days_early_late)}d late`}
                 </span>
               </div>
             ))}
