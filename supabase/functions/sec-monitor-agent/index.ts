@@ -164,6 +164,8 @@ Deno.serve(async (req) => {
             risk_signals:     filing.risk_signals,
             accession_number: filing.accession_number,
             document_url:     filing.document_url,
+            cik:              filing.cik,
+            provider:         filing.provider,
             agent_name,
             is_demo:          DEMO_MODE,
           });

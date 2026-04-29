@@ -23,8 +23,8 @@ export interface RawArticle {
   summary: string;
   url: string;
   source: string;
-  published_date?: string;
-  relevance_score: number; // 0–1, normalised from provider
+  published_date?: string; // stored as news_date in negative_news table
+  relevance_score: number; // 0–1, normalised from provider; stored in negative_news.relevance_score
   provider: string;        // 'tavily' | 'google_news' | 'manual'
 }
 

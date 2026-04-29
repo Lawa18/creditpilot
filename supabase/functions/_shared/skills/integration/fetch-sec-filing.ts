@@ -11,15 +11,15 @@
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface SecFiling {
-  cik: string;
-  company_name: string;
+  cik: string;              // stored in sec_filings.cik
+  company_name: string;     // not stored in sec_filings (resolved via customers join)
   filing_type: "10-K" | "10-Q" | "8-K" | "other";
   filing_date: string;        // ISO date
   accession_number: string;   // EDGAR unique ID e.g. "0001021162-24-000001"
   document_url: string;       // direct link to filing
   risk_signals: string[];     // detected risk keyword signals
   key_findings: string;       // brief summary of findings
-  provider: "edgar";
+  provider: "edgar";          // stored in sec_filings.provider
 }
 
 export interface SecFilingProvider {

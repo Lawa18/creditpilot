@@ -205,6 +205,7 @@ Deno.serve(async (req) => {
             source: article.source,
             url: article.url,
             news_date: articleDate,
+            relevance_score: article.relevance_score,
             severity: classification.severity,
             category: classification.category,
             sentiment_score: classification.sentiment_score,
