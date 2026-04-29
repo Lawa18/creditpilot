@@ -316,7 +316,7 @@ function CustomerDetail({ customer }: { customer: any }) {
                     <Badge variant={inv.status === "paid" ? "secondary" : inv.status === "overdue" ? "destructive" : "outline"} className="text-[10px]">{inv.status}</Badge>
                   </div>
                   <div className="flex justify-between mt-1.5 text-muted-foreground">
-                    <span>Amount: {formatCurrency(inv.amount)} · Paid: {formatCurrency(inv.paid_amount)} · Out: {formatCurrency(inv.outstanding_amount)}</span>
+                    <span>Amount: {formatCurrency(inv.invoice_amount)} · Paid: {formatCurrency(inv.paid_amount)} · Out: {formatCurrency(inv.outstanding_amount)}</span>
                   </div>
                   <div className="flex justify-between mt-1">
                     <span className="text-muted-foreground">Due: {inv.due_date}</span>
@@ -333,7 +333,7 @@ function CustomerDetail({ customer }: { customer: any }) {
             {(payments ?? []).map((p: any) => (
               <div key={p.id} className="bg-secondary/30 rounded-lg p-3 text-xs flex justify-between">
                 <div>
-                  <p className="font-medium">{p.payment_date} · {formatCurrency(p.amount)}</p>
+                  <p className="font-medium">{p.payment_date} · {formatCurrency(p.amount_paid)}</p>
                   <p className="text-muted-foreground">{p.payment_method} · {p.days_to_pay}d to pay</p>
                 </div>
                 <span className={cn("font-medium", p.on_time ? "text-risk-current" : "text-severity-critical")}>
