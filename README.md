@@ -28,6 +28,36 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram and
 
 ---
 
+## Data Residency
+
+CreditPilot is designed for self-hosted deployment. Your AR data, customer financials, and credit events never need to leave your infrastructure. The Supabase stack (Postgres + Edge Functions) can run on your own Supabase project or on-premise Postgres. The only external calls are to the Anthropic Claude API for AI synthesis — and this can be replaced with a local LLM if required.
+
+The hosted demo at [creditpilot.vercel.app](https://creditpilot.vercel.app) uses Supabase Cloud and Anthropic's API. For production deployments handling real company data, self-hosting is strongly recommended.
+
+### What Vercel sees
+Only your compiled frontend code (HTML/JS/CSS). No database queries pass through Vercel — all data fetches go directly from the browser to Supabase.
+
+### What Supabase sees
+All your company data — customers, invoices, AR aging, credit events, agent messages. In self-hosted mode, this runs on your own infrastructure. In cloud mode, Supabase hosts on AWS with SOC 2 Type II compliance.
+
+### What the Anthropic API receives
+Only the CIA and dunning letter agents make external API calls. The following data is sent:
+
+| Agent | Mode | Data sent to Anthropic |
+|-------|------|----------------------|
+| AR Aging | Dunning letter | Company name, overdue amounts, utilization %, payment rate, dunning stage |
+| News Monitor | Classification | Article headline and summary (already public) |
+| CIA | Briefing | Customer names, credit limits, balances, event types and descriptions |
+| CIA | Question | Same as briefing, filtered to relevant customers + user question text |
+| CIA | Suggestions | Event types and severities only |
+
+Invoice numbers, internal account IDs, and payment transaction details are never sent to the Anthropic API.
+
+### Local LLM option
+Replace the Anthropic API with a local model (e.g. Ollama) by implementing the same interface in `cia-agent/index.ts` and the generative skills. In fully local mode, no data leaves your infrastructure.
+
+---
+
 ## Agents
 
 ### AR Aging Agent (`ar-aging-agent`)
@@ -176,6 +206,7 @@ Set these in the Supabase dashboard → Edge Functions → Manage secrets:
 | `DEMO_MODE` | Yes | `true` replays seed data without API calls (except CIA question mode) |
 | `SUPABASE_URL` | Auto | Set automatically by Supabase |
 | `SUPABASE_SERVICE_ROLE_KEY` | Auto | Set automatically by Supabase |
+| `TAVILY_API_KEY` | No | Enables live news fetching via Tavily API |
 | `CREDIT_TEAM_EMAIL` | No | Recipient for SEC alert emails (defaults to `credit-team@company.com`) |
 | `SENDGRID_API_KEY` | No | Enables email delivery via SendGrid |
 | `TEAMS_WEBHOOK_URL` | No | Enables Teams delivery via incoming webhook |
