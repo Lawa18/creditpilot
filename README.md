@@ -46,6 +46,22 @@ See [docs/AGENTS.md](docs/AGENTS.md) for full agent documentation including even
 
 ---
 
+## Data Ingestion
+
+### AR Data
+Upload an AR aging CSV export from any ERP (SAP, NetSuite, QuickBooks, Dynamics) via the Upload AR Data button on the AR Aging page. Column headers are auto-detected with 40+ aliases. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the expected schema.
+
+### News
+The News Monitor Agent fetches live news via the Tavily API. Set `TAVILY_API_KEY` in Supabase function secrets. Without a key, the agent processes any existing rows in the `negative_news` table.
+
+### SEC Filings
+The SEC Monitor Agent uses the free SEC EDGAR API — no key required. Monitored companies are configured in the `sec_monitoring` table.
+
+### Credit Scores
+Credit scores from D&B, Coface, Experian, and other providers are normalised to a 0–100 scale via `normalise-credit-signal.ts`. API integrations are stubbed in `fetch-credit-score.ts` — ready to wire when API keys are available. Scores can also be entered manually on the Customers page.
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
@@ -101,8 +117,11 @@ In the Supabase dashboard → Edge Functions → Manage secrets, add:
 
 ```
 ANTHROPIC_API_KEY = sk-ant-...
-DEMO_MODE         = true
+DEMO_MODE         = false
+TAVILY_API_KEY    = tvly-...   # optional — enables live news search
 ```
+
+To try the demo first, set `DEMO_MODE = true` and leave `TAVILY_API_KEY` unset.
 
 ### 5. Deploy the edge functions
 
@@ -119,7 +138,21 @@ supabase functions deploy cia-agent
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173). With `DEMO_MODE=true` the demo data loads automatically on first page visit.
+Open [http://localhost:5173](http://localhost:5173).
+
+> To try the demo without any setup, visit [creditpilot.vercel.app](https://creditpilot.vercel.app).
+
+---
+
+## Security
+
+Before loading real company data, lock down your Supabase project:
+
+1. Remove anon write policies from `pending_actions`, `customers`, `credit_actions`
+2. Add authentication (Supabase Auth)
+3. Use a dedicated Supabase project — not the same one as the demo
+
+The demo deployment uses intentionally open RLS policies so anyone can interact with the seed data. These must be replaced before going to production.
 
 ---
 
@@ -172,11 +205,9 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for schema details and relation
 
 ## Demo Mode
 
-When `DEMO_MODE=true`, agents run against pre-seeded fictional data without burning API tokens or touching real customer data. A Reset Demo button in the Actions page restores all tables to their seed state and re-runs the agents.
+All demo rows are tagged with `is_demo = true`. This column exists on `credit_events`, `agent_messages`, `pending_actions`, `negative_news`, and `sec_monitoring` — queries filter by it so demo and production data never mix. The Reset Demo button on the Actions page restores all tables to their seed state and re-runs the agents.
 
-All demo rows are tagged with `is_demo = true`. This column exists on `credit_events`, `agent_messages`, `pending_actions`, `negative_news`, and `sec_monitoring` — queries filter by it so demo and production data never mix.
-
-See [docs/DEMO_MODE.md](docs/DEMO_MODE.md) for the full explanation.
+See [docs/DEMO_MODE.md](docs/DEMO_MODE.md) for full details.
 
 ---
 
@@ -251,16 +282,6 @@ Tests cover: `normalise-credit-signal` (42), `aggregate-credit-scores` (15), `de
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, branch conventions, how to add a new agent, and the PR checklist.
-
----
-
-## Security
-
-The demo uses intentionally open RLS policies so anyone can interact with the demo data. **Before loading real company data:**
-
-1. Remove anon write policies from `pending_actions`, `customers`, `credit_actions`
-2. Add authentication (Supabase Auth)
-3. Use a dedicated Supabase project — not the same one as the demo
 
 ---
 
