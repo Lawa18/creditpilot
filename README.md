@@ -6,11 +6,17 @@ Open-source autonomous AI agents for trade credit management.
 
 ## What is CreditPilot?
 
-CreditPilot is an open source autonomous AI agents that automate the routine work in trade credit: monitoring overdue accounts receivable, scanning for negative news, watching SEC filings for distress signals, and synthesising all signals into a daily credit intelligence briefing.
+CreditPilot is an open-source platform of autonomous AI agents for B2B trade credit management. Agents monitor overdue AR, scan for negative news, watch SEC filings for distress signals, and synthesise everything into a daily credit intelligence briefing — surfaced through a React dashboard and a Perplexity-style chat interface.
 
-Agents run against a company’s AR and their customer data, write their findings to a Postgres database, share via emails/notifications, and surface them through a React dashboard. A human reviews AI-proposed actions (credit limit reductions, credit holds, etc.) before they take effect. 
+Think of it as "Perplexity for trade credit."
 
-A live demo is available at https://creditpilot.vercel.app — a fictional $500M specialty alloys distributor with 49 customers across seven credit scenarios. 
+Agents write their findings as structured credit events to a Postgres database, compose dunning letters and alerts, and propose actions (credit limit reductions, credit holds) for human approval. Nothing changes without a credit manager signing off. The Credit Intelligence Agent (CIA) answers questions in natural language, citing the specific signals behind its reasoning.
+
+Built by a trade credit practitioner to explore what's possible when you apply modern AI to the workflows credit managers actually do every day. More agents are planned.
+
+The repo is designed for local deployment — your AR data, customer financials, and credit events stay on your own infrastructure. The hosted demo uses Supabase, Vercel, and the Anthropic Claude API.
+
+A live demo is available at creditpilot.vercel.app — a fictional $500M specialty alloys distributor with 49 customers across seven credit scenarios. No signup required.
 
 ---
 
@@ -32,7 +38,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full system diagram and
 
 CreditPilot is designed for self-hosted deployment. Your AR data, customer financials, and credit events never need to leave your infrastructure. The Supabase stack (Postgres + Edge Functions) can run on your own Supabase project or on-premise Postgres. The only external calls are to the Anthropic Claude API for AI synthesis — and this can be replaced with a local LLM if required.
 
-The hosted demo at [creditpilot.vercel.app](https://creditpilot.vercel.app) uses Supabase Cloud and Anthropic's API. For production deployments handling real company data, self-hosting is strongly recommended.
+The hosted demo at https://creditpilot.vercel.app uses Supabase Cloud and Anthropic's API. For production deployments handling real company data, self-hosting is strongly recommended.
 
 ### What Vercel sees
 Only your compiled frontend code (HTML/JS/CSS). No database queries pass through Vercel — all data fetches go directly from the browser to Supabase.
@@ -73,6 +79,8 @@ Fetches live filings from the SEC EDGAR API (free, no API key required). Detects
 Synthesises signals from all three monitoring agents into structured intelligence. Operates in three modes: `briefing` (daily portfolio summary, calls Claude Opus), `question` (answers a specific credit question with cited sources, calls Claude Sonnet), and `suggestions` (generates relevant follow-up questions, calls Claude Haiku). Writes `DAILY_BRIEFING` and `COMPOSITE_RISK` events back to `credit_events` and marks source events as processed. Owns all credit limit decisioning — runs `assessCompositeRisk` and `calculateCreditLimitProposal` skills, writes `pending_actions`.
 
 See [docs/AGENTS.md](docs/AGENTS.md) for full agent documentation including event taxonomies.
+
+More agents will be added.
 
 ---
 
@@ -324,8 +332,13 @@ MIT — use it, fork it, build on it.
 
 ## About
 
-Built by Lars Wallin — Head of Financial Institutions at Coface, one of the world's largest trade credit insurance companies. This project applies domain expertise from trade credit insurance to autonomous AI agents for B2B credit managers.
+Hi, I'm Lars.
+By day I work at Coface — one of the world's largest trade credit insurance companies — as Head of Financial Institutions. This project applies 15+ years of domain expertise in trade credit, AR financing, and credit risk to autonomous AI agents for B2B credit management.
 
-Connect on [LinkedIn](https://www.linkedin.com/in/larsewallin/).
+I built CreditPilot to explore what's possible when practitioners build their own tools. The best credit software has always been written by people who've actually sat in the chair.
+
+If you're working on trade credit, AR financing, or AI in financial services — I'd love to connect.
+
+LinkedIn
 
 The demo company and all 49 customer accounts are entirely fictional.
