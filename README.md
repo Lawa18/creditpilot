@@ -20,6 +20,42 @@ A live demo is available at creditpilot.vercel.app — a fictional $500M special
 
 ---
 
+## How It Works
+
+```
+DATA IN
+Customer master data → customers table (manual setup or CSV)
+AR aging export      → invoices table (CSV upload from any ERP)
+News                 → Tavily API (live fetch) or existing rows
+SEC filings          → SEC EDGAR API (live, free, no key required)
+Credit scores        → D&B, Coface, Experian (stubbed, ready to wire)
+
+AGENTS READ AND SIGNAL
+AR Aging Agent  → reads invoices → writes OVERDUE_, HIGH_UTILIZATION credit_events
+News Agent      → fetches + classifies news → writes NEGATIVE_NEWS_ credit_events
+SEC Agent       → fetches EDGAR filings → writes GOING_CONCERN, COVENANT_WAIVER credit_events
+(SEC agent automatically skips private companies with no CIK)
+
+CIA SYNTHESISES
+Reads all unprocessed credit_events
+Detects multi-signal convergence (same customer flagged by 2+ agents)
+Runs assessCompositeRisk → calculateCreditLimitProposal
+Writes COMPOSITE_RISK credit_events + pending_actions
+Answers natural language questions with cited sources
+
+HUMAN REVIEWS
+Credit Events page → review all signals (read only)
+Actions page       → approve or reject AI-proposed actions
+CIA chat           → ask questions about the portfolio
+Nothing changes without human approval
+
+EXECUTED
+Approved action → customers.credit_limit updated
+Full audit trail written to credit_events
+```
+
+---
+
 ## Architecture
 
 ```
@@ -59,6 +95,8 @@ Only the CIA and dunning letter agents make external API calls. The following da
 
 Invoice numbers, internal account IDs, and payment transaction details are never sent to the Anthropic API.
 
+**Note on customer data and privacy:** Customer names and financial data sent to the CIA agent are processed under Anthropic's API terms. Anthropic does not train on API data by default — see [Anthropic's privacy policy](https://www.anthropic.com/privacy). For deployments where customer identity must stay on-premise, use the local LLM option or configure CIA to send anonymised customer IDs instead of names.
+
 ### Local LLM option
 Replace the Anthropic API with a local model (e.g. Ollama) by implementing the same interface in `cia-agent/index.ts` and the generative skills. In fully local mode, no data leaves your infrastructure.
 
@@ -85,6 +123,25 @@ More agents will be added.
 ---
 
 ## Data Ingestion
+
+### Customer Master Data
+Before agents can run, load your customer portfolio into the `customers` table. Each record requires:
+
+| Field | Required | Notes |
+|-------|----------|-------|
+| `company_name` | Yes | Used for news search and display |
+| `company_type` | Yes | `public`, `private`, or `sme` |
+| `credit_limit` | Yes | In your base currency |
+| `ticker` | No | Public companies only — improves news search precision |
+| `cik` | No | Public companies only — required for SEC EDGAR monitoring |
+
+Private and SME companies are fully supported. The news agent searches by company name. The SEC agent automatically skips companies with no CIK. Credit scoring works for all company types via manual entry or CSV import.
+
+The difference between `private` and `sme` is intentional but currently a data quality label — future agents will apply different thresholds and workflows for each. Use `private` for larger private companies and `sme` for smaller suppliers typically under $50M revenue.
+
+**V1 — Manual setup:** Insert customers via the Supabase dashboard or a seed SQL file. The demo ships with 49 public companies and 10 private/SME customers as a reference.
+
+**Planned:** CSV import for customer master data, ERP API integration for automatic sync.
 
 ### AR Data
 Upload an AR aging CSV export from any ERP (SAP, NetSuite, QuickBooks, Dynamics) via the Upload AR Data button on the AR Aging page. Column headers are auto-detected with 40+ aliases. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the expected schema.
