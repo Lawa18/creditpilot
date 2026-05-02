@@ -649,7 +649,27 @@ Return ONLY valid JSON in this exact shape, no other text:
       const text = extractText(message);
       const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
       const result = JSON.parse(cleaned);
-      return jsonRes(result);
+
+      // Generate contextual follow-up questions based on the answer
+      let relatedQuestions = DEMO_SUGGESTIONS.slice(0, 3); // fallback
+      try {
+        const followUpMessage = await anthropic.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 150,
+          system: "Generate exactly 3 short follow-up questions a credit manager would ask after reading this answer. Return ONLY a JSON array of 3 strings. Questions must be specific to the companies and issues mentioned.",
+          messages: [{
+            role: "user",
+            content: `Answer just given: ${result.answer.slice(0, 500)}\n\nGenerate 3 follow-up questions.`,
+          }],
+        });
+        const followUpText = extractText(followUpMessage);
+        const followUpCleaned = followUpText.replace(/```json|```/g, "").trim();
+        relatedQuestions = JSON.parse(followUpCleaned);
+      } catch {
+        // keep fallback
+      }
+
+      return jsonRes({ ...result, relatedQuestions });
     } catch (err) {
       console.error("Question mode error:", err);
       return jsonRes({ error: "Failed to generate answer" }, 500);

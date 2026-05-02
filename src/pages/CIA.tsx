@@ -23,6 +23,7 @@ interface CIAAnswer {
   sources: Source[];
   confidence: "High" | "Medium" | "Low";
   confidence_reason: string;
+  relatedQuestions?: string[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -120,26 +121,12 @@ export default function CIA() {
       .finally(() => setIsLoading(false));
   }, [question]);
 
-  // Load related suggestions after answer, filter out current question
+  // Use contextual follow-up questions returned with the answer
   useEffect(() => {
     if (!answer) return;
-    const cached = sessionStorage.getItem("cia_suggestions");
-    if (cached) {
-      try {
-        const all: string[] = JSON.parse(cached);
-        setRelated(all.filter(s => s !== question).slice(0, 3));
-        return;
-      } catch {}
+    if (Array.isArray(answer.relatedQuestions) && answer.relatedQuestions.length > 0) {
+      setRelated(answer.relatedQuestions.filter(s => s !== question).slice(0, 3));
     }
-    supabase.functions
-      .invoke("cia-agent", { body: { mode: "suggestions" } })
-      .then(({ data }) => {
-        if (Array.isArray(data?.suggestions)) {
-          sessionStorage.setItem("cia_suggestions", JSON.stringify(data.suggestions));
-          setRelated(data.suggestions.filter((s: string) => s !== question).slice(0, 3));
-        }
-      })
-      .catch(() => {});
   }, [answer, question]);
 
   const handleSourceClick = (eventId: string) => {
