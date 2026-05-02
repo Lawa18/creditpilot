@@ -108,6 +108,7 @@ export default function CIA() {
     if (!question) return;
     setAnswer(null);
     setError(null);
+    setRelated([]);
     setIsLoading(true);
 
     supabase.functions

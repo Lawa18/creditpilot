@@ -664,11 +664,16 @@ Return ONLY valid JSON in this exact shape, no other text:
         });
         const followUpText = extractText(followUpMessage);
         const followUpCleaned = followUpText.replace(/```json|```/g, "").trim();
-        relatedQuestions = JSON.parse(followUpCleaned);
+        const parsed = JSON.parse(followUpCleaned);
+        if (Array.isArray(parsed)) {
+          relatedQuestions = parsed;
+        }
+        // if parsed is not an array (e.g. {questions:[...]}) keep the fallback
       } catch {
         // keep fallback
       }
 
+      console.log("DEBUG relatedQuestions:", relatedQuestions);
       return jsonRes({ ...result, relatedQuestions });
     } catch (err) {
       console.error("Question mode error:", err);
