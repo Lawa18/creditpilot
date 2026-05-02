@@ -300,7 +300,11 @@ async function fetchRelevantData(
 ): Promise<RetrievedData> {
 
   // Extract customer name mentions from question for targeted queries
-  const words = question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? [];
+  // Strip common English words that match the capitalised-word pattern but are not company names
+  const STOPWORDS = new Set(["What", "Which", "Who", "How", "When", "Where", "Why", "The", "Their", "Corporation", "Company", "Group", "Inc", "Ltd", "LLC", "Current", "Credit", "Limit", "Balance", "And", "For", "Has", "Have", "Does", "Should", "Could", "Would", "Tell", "Show", "Give", "Get"]);
+  const words = (question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? [])
+    .flatMap(phrase => phrase.split(" "))
+    .filter(w => !STOPWORDS.has(w) && w.length > 2);
 
   // Build keyword filter for text search
   const keywords = question
@@ -347,21 +351,23 @@ async function fetchRelevantData(
 
     // customers — search by name or return all
     tables.has("customers") && (async () => {
-      let q = supabase
+      const baseQuery = supabase
         .from("customers")
         .select("id, company_name, ticker, company_type, credit_limit, current_balance, credit_rating_score, credit_rating_source, scenario, risk_tags, flags")
         .order("company_name")
         .limit(20);
 
       if (words.length > 0) {
+        // Specific company names were mentioned — search for them
         const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
-        const { data: named } = await q.or(nameFilter);
-        if (named && named.length > 0) {
-          results.customers = named;
-          return;
-        }
+        const { data: named } = await baseQuery.or(nameFilter);
+        // If we searched for a specific company and found nothing, return empty —
+        // don't fall back to the full list (would give Claude 20 unrelated customers)
+        results.customers = named ?? [];
+        return;
       }
-      const { data } = await q;
+      // No company names mentioned — return full list for portfolio-level questions
+      const { data } = await baseQuery;
       results.customers = data ?? [];
     })(),
 
