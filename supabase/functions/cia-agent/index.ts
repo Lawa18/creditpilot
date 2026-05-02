@@ -80,7 +80,7 @@ interface Customer {
   ticker: string | null;
   company_type: "public" | "private" | "sme";
   credit_limit: number | null;
-  current_balance: number | null;
+  current_exposure: number | null;
 }
 
 interface AgentRun {
@@ -177,7 +177,7 @@ function severityRank(s: string): number {
 
 function buildSystemPrompt(customers: Customer[]): string {
   const customerMap = customers.map(c =>
-    `- ${c.name} (id: ${c.id}, type: ${c.company_type}, credit limit: $${c.credit_limit?.toLocaleString() ?? "N/A"}, balance: $${c.current_balance?.toLocaleString() ?? "0"})`
+    `- ${c.name} (id: ${c.id}, type: ${c.company_type}, credit limit: $${c.credit_limit?.toLocaleString() ?? "N/A"}, balance: $${c.current_exposure?.toLocaleString() ?? "0"})`
   ).join("\n");
 
   return `You are the Credit Intelligence Agent (CIA) for CreditPilot, an autonomous B2B trade credit management system.
@@ -333,19 +333,22 @@ async function fetchRelevantData(
 
       let q = supabase
         .from("credit_events")
-        .select("id, event_type, severity, source_agent, title, description, payload, created_at, customers!left(company_name, ticker, credit_limit, current_balance)")
+        .select("id, event_type, severity, source_agent, title, description, payload, created_at, customers!left(company_name, ticker, credit_limit, current_exposure)")
         .eq("is_demo", demoMode)
         .order("created_at", { ascending: false })
         .limit(15);
 
       if (keywords.length > 0) {
-        const { data: filtered } = await q.or(orFilter);
+        console.log("DEBUG credit_events orFilter:", orFilter);
+        const { data: filtered, error: filteredErr } = await q.or(orFilter);
+        if (filteredErr) console.log("DEBUG credit_events filtered error:", filteredErr.message);
         if (filtered && filtered.length >= 2) {
           results.credit_events = filtered;
           return;
         }
       }
-      const { data: fallback } = await q;
+      const { data: fallback, error: fallbackErr } = await q;
+      if (fallbackErr) console.log("DEBUG credit_events fallback error:", fallbackErr.message);
       results.credit_events = fallback ?? [];
     })(),
 
@@ -353,21 +356,24 @@ async function fetchRelevantData(
     tables.has("customers") && (async () => {
       const baseQuery = supabase
         .from("customers")
-        .select("id, company_name, ticker, company_type, credit_limit, current_balance, credit_rating_score, credit_rating_source, scenario, risk_tags, flags")
+        .select("id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags")
         .order("company_name")
         .limit(20);
 
       if (words.length > 0) {
         // Specific company names were mentioned — search for them
         const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
-        const { data: named } = await baseQuery.or(nameFilter);
+        console.log("DEBUG customers nameFilter:", nameFilter);
+        const { data: named, error: namedErr } = await baseQuery.or(nameFilter);
+        if (namedErr) console.log("DEBUG customers named error:", namedErr.message);
         // If we searched for a specific company and found nothing, return empty —
         // don't fall back to the full list (would give Claude 20 unrelated customers)
         results.customers = named ?? [];
         return;
       }
       // No company names mentioned — return full list for portfolio-level questions
-      const { data } = await baseQuery;
+      const { data, error: allErr } = await baseQuery;
+      if (allErr) console.log("DEBUG customers all error:", allErr.message);
       results.customers = data ?? [];
     })(),
 
@@ -546,16 +552,22 @@ serve(async (req: Request) => {
 
     // Route question to relevant tables
     const tables = routeQuestion(question);
+    console.log("DEBUG tables:", [...tables]);
+    const STOPWORDS_DEBUG = new Set(["What", "Which", "Who", "How", "When", "Where", "Why", "The", "Their", "Corporation", "Company", "Group", "Inc", "Ltd", "LLC", "Current", "Credit", "Limit", "Balance", "And", "For", "Has", "Have", "Does", "Should", "Could", "Would", "Tell", "Show", "Give", "Get"]);
+    const debugWords = (question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? []).flatMap(p => p.split(" ")).filter(w => !STOPWORDS_DEBUG.has(w) && w.length > 2);
+    console.log("DEBUG words:", debugWords);
 
     // Fetch data from all relevant tables in parallel
     const data = await fetchRelevantData(supabaseClient, question, tables, DEMO_MODE);
+    console.log("DEBUG customers found:", data.customers.length);
+    console.log("DEBUG credit_events found:", data.credit_events.length);
 
     // Build context string from all retrieved data
     const contextParts: string[] = [];
 
     if (data.customers.length > 0) {
       contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
-        `- ${c.company_name} (${c.company_type}): credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_balance?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_balance / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, risk_tags=[${(c.risk_tags ?? []).join(", ")}]`
+        `- ${c.company_name} (${c.company_type}): credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, risk_tags=[${(c.risk_tags ?? []).join(", ")}]`
       ).join("\n"));
     }
 
@@ -590,6 +602,7 @@ serve(async (req: Request) => {
     }
 
     const context = contextParts.join("\n\n");
+    console.log("DEBUG context length:", context.length);
 
     const questionSystemPrompt = `You are the Credit Intelligence Agent (CIA) for CreditPilot — a Perplexity-style credit analyst that answers questions about a B2B trade credit portfolio.
 
@@ -727,7 +740,7 @@ Return ONLY valid JSON in this exact shape, no other text:
   const customerIds = [...new Set(events.map((e: any) => e.customer_id).filter(Boolean))] as string[];
   const { data: customers } = await supabaseClient
     .from("customers")
-    .select("id, name, ticker, company_type, credit_limit, current_balance")
+    .select("id, name, ticker, company_type, credit_limit, current_exposure")
     .in("id", customerIds);
 
   // 4. Call Claude
@@ -842,7 +855,7 @@ Return ONLY valid JSON in this exact shape, no other text:
     const creditScore: number | null = (custEvents[0] as any)?.credit_rating_score ?? null;
     const utilizationPct: number = (custEvents.find((e: any) => e.payload?.utilization_pct != null) as any)?.payload?.utilization_pct ?? 0;
     const daysOver90: number = (custEvents.find((e: any) => e.payload?.buckets?.bucket_over_90 != null) as any)?.payload?.buckets?.bucket_over_90 ?? 0;
-    const currentExposure: number = customer.current_balance ?? 0;
+    const currentExposure: number = customer.current_exposure ?? 0;
 
     const riskAssessment = assessCompositeRisk({
       utilization_pct: utilizationPct,
