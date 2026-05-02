@@ -247,6 +247,224 @@ function extractText(message: Anthropic.Message): string {
     .join("");
 }
 
+// ─── Question router ─────────────────────────────────────────────────────────
+
+// Determines which tables are relevant to a question
+// Returns a set of table names to query
+function routeQuestion(question: string): Set<string> {
+  const q = question.toLowerCase();
+  const tables = new Set<string>();
+
+  // Always include credit_events — it's the core signal layer
+  tables.add("credit_events");
+
+  // Customer/portfolio questions
+  if (/credit.?limit|exposure|utiliz|balance|customer|portfolio|company|counterpart/i.test(q))
+    tables.add("customers");
+
+  // AR/invoice questions
+  if (/invoice|overdue|aging|ar |receivable|outstanding|bucket|days.?past|dso/i.test(q))
+    tables.add("invoices");
+
+  // Payment behaviour questions
+  if (/payment|pay|late|early|behaviour|history|on.?time|dso|terms/i.test(q))
+    tables.add("payment_transactions");
+
+  // News questions
+  if (/news|article|press|media|report|sentiment|negative|bloomberg|reuters/i.test(q))
+    tables.add("negative_news");
+
+  // SEC/filing questions
+  if (/sec|filing|edgar|10.?k|10.?q|covenant|going.?concern|ceo|departure/i.test(q))
+    tables.add("sec_filings");
+
+  return tables;
+}
+
+// ─── Parallel data fetcher ────────────────────────────────────────────────────
+
+interface RetrievedData {
+  credit_events: any[];
+  customers: any[];
+  invoices: any[];
+  payment_transactions: any[];
+  negative_news: any[];
+  sec_filings: any[];
+}
+
+async function fetchRelevantData(
+  supabase: any,
+  question: string,
+  tables: Set<string>,
+  demoMode: boolean
+): Promise<RetrievedData> {
+
+  // Extract customer name mentions from question for targeted queries
+  const words = question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? [];
+
+  // Build keyword filter for text search
+  const keywords = question
+    .split(/\s+/)
+    .map(w => w.toLowerCase().replace(/[?!.,'"]/g, ""))
+    .filter(w => w.length > 4)
+    .slice(0, 5);
+
+  const results: RetrievedData = {
+    credit_events: [],
+    customers: [],
+    invoices: [],
+    payment_transactions: [],
+    negative_news: [],
+    sec_filings: [],
+  };
+
+  await Promise.allSettled([
+
+    // credit_events — keyword search on title + description
+    tables.has("credit_events") && (async () => {
+      const orFilter = keywords.flatMap(kw => [
+        `title.ilike.%${kw}%`,
+        `description.ilike.%${kw}%`,
+      ]).join(",");
+
+      let q = supabase
+        .from("credit_events")
+        .select("id, event_type, severity, source_agent, title, description, payload, created_at, customers!left(company_name, ticker, credit_limit, current_balance)")
+        .eq("is_demo", demoMode)
+        .order("created_at", { ascending: false })
+        .limit(15);
+
+      if (keywords.length > 0) {
+        const { data: filtered } = await q.or(orFilter);
+        if (filtered && filtered.length >= 2) {
+          results.credit_events = filtered;
+          return;
+        }
+      }
+      const { data: fallback } = await q;
+      results.credit_events = fallback ?? [];
+    })(),
+
+    // customers — search by name or return all
+    tables.has("customers") && (async () => {
+      let q = supabase
+        .from("customers")
+        .select("id, company_name, ticker, company_type, credit_limit, current_balance, credit_rating_score, credit_rating_source, scenario, risk_tags, flags")
+        .order("company_name")
+        .limit(20);
+
+      if (words.length > 0) {
+        const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
+        const { data: named } = await q.or(nameFilter);
+        if (named && named.length > 0) {
+          results.customers = named;
+          return;
+        }
+      }
+      const { data } = await q;
+      results.customers = data ?? [];
+    })(),
+
+    // invoices — filter by customer name mention or return at-risk
+    tables.has("invoices") && (async () => {
+      const { data: customers } = await supabase
+        .from("customers")
+        .select("id, company_name")
+        .limit(60);
+
+      const customerMap = Object.fromEntries((customers ?? []).map((c: any) => [c.id, c.company_name]));
+
+      let custIds: string[] = [];
+      if (words.length > 0) {
+        custIds = (customers ?? [])
+          .filter((c: any) => words.some(w => c.company_name.toLowerCase().includes(w.toLowerCase())))
+          .map((c: any) => c.id);
+      }
+
+      let q = supabase
+        .from("invoices")
+        .select("id, invoice_number, customer_id, invoice_date, due_date, invoice_amount, outstanding_amount, status, days_overdue")
+        .eq("is_demo", demoMode)
+        .order("days_overdue", { ascending: false })
+        .limit(20);
+
+      if (custIds.length > 0) q = q.in("customer_id", custIds);
+      else q = q.gt("days_overdue", 0);
+
+      const { data } = await q;
+      results.invoices = (data ?? []).map((inv: any) => ({
+        ...inv,
+        company_name: customerMap[inv.customer_id] ?? inv.customer_id,
+      }));
+    })(),
+
+    // payment_transactions — recent history for mentioned customers
+    tables.has("payment_transactions") && (async () => {
+      const { data: customers } = await supabase
+        .from("customers")
+        .select("id, company_name")
+        .limit(60);
+
+      let custIds: string[] = [];
+      if (words.length > 0) {
+        custIds = (customers ?? [])
+          .filter((c: any) => words.some(w => c.company_name.toLowerCase().includes(w.toLowerCase())))
+          .map((c: any) => c.id);
+      }
+
+      let q = supabase
+        .from("payment_transactions")
+        .select("customer_id, payment_date, amount_paid, days_to_pay, days_early_late, on_time, payment_method")
+        .order("payment_date", { ascending: false })
+        .limit(30);
+
+      if (custIds.length > 0) q = q.in("customer_id", custIds);
+
+      const { data } = await q;
+      const customerMap = Object.fromEntries((customers ?? []).map((c: any) => [c.id, c.company_name]));
+      results.payment_transactions = (data ?? []).map((p: any) => ({
+        ...p,
+        company_name: customerMap[p.customer_id] ?? p.customer_id,
+      }));
+    })(),
+
+    // negative_news — keyword search
+    tables.has("negative_news") && (async () => {
+      let q = supabase
+        .from("negative_news")
+        .select("id, customer_id, headline, summary, source, news_date, severity, sentiment_score, category, customers!left(company_name)")
+        .eq("is_demo", demoMode)
+        .order("news_date", { ascending: false })
+        .limit(10);
+
+      if (keywords.length > 0) {
+        const orFilter = keywords.map(kw => `headline.ilike.%${kw}%`).join(",");
+        const { data: filtered } = await q.or(orFilter);
+        if (filtered && filtered.length > 0) {
+          results.negative_news = filtered;
+          return;
+        }
+      }
+      const { data } = await q;
+      results.negative_news = data ?? [];
+    })(),
+
+    // sec_filings — most recent with risk signals
+    tables.has("sec_filings") && (async () => {
+      const { data } = await supabase
+        .from("sec_filings")
+        .select("id, customer_id, filing_type, filing_date, risk_signals, key_findings, accession_number, customers!left(company_name, ticker)")
+        .eq("is_demo", demoMode)
+        .order("filing_date", { ascending: false })
+        .limit(10);
+      results.sec_filings = data ?? [];
+    })(),
+
+  ].filter(Boolean));
+
+  return results;
+}
+
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -320,82 +538,81 @@ serve(async (req: Request) => {
     if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
     if (!question) return jsonRes({ error: "question is required" }, 400);
 
-    // Extract keywords from the question (words > 4 chars, strip punctuation)
-    const keywords = question
-      .split(/\s+/)
-      .map((w: string) => w.toLowerCase().replace(/[?!.,'"]/g, ""))
-      .filter((w: string) => w.length > 4);
+    // Route question to relevant tables
+    const tables = routeQuestion(question);
 
-    let events: any[] = [];
+    // Fetch data from all relevant tables in parallel
+    const data = await fetchRelevantData(supabaseClient, question, tables, DEMO_MODE);
 
-    if (keywords.length > 0) {
-      const orFilter = keywords.slice(0, 3)
-        .flatMap((kw: string) => [`title.ilike.%${kw}%`, `description.ilike.%${kw}%`])
-        .join(",");
+    // Build context string from all retrieved data
+    const contextParts: string[] = [];
 
-      const { data: filtered } = await supabaseClient
-        .from("credit_events")
-        .select("id, event_type, severity, source_agent, title, description, created_at, customers!left(id, company_name, ticker)")
-        .or(orFilter)
-        .eq("is_demo", DEMO_MODE)
-        .order("created_at", { ascending: false })
-        .limit(15);
-
-      events = filtered ?? [];
+    if (data.customers.length > 0) {
+      contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
+        `- ${c.company_name} (${c.company_type}): credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_balance?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_balance / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, risk_tags=[${(c.risk_tags ?? []).join(", ")}]`
+      ).join("\n"));
     }
 
-    // Fall back to most recent 15 if keyword filter found < 2 results
-    if (events.length < 2) {
-      const { data: fallback } = await supabaseClient
-        .from("credit_events")
-        .select("id, event_type, severity, source_agent, title, description, created_at, customers!left(id, company_name, ticker)")
-        .eq("is_demo", DEMO_MODE)
-        .order("created_at", { ascending: false })
-        .limit(15);
-      events = fallback ?? [];
+    if (data.invoices.length > 0) {
+      contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any) =>
+        `- ${inv.company_name}: invoice ${inv.invoice_number}, amount=$${inv.invoice_amount?.toLocaleString()}, outstanding=$${inv.outstanding_amount?.toLocaleString()}, due=${inv.due_date}, status=${inv.status}, days_overdue=${inv.days_overdue}`
+      ).join("\n"));
     }
 
-    const eventsContext = events
-      .sort((a: any, b: any) => severityRank(b.severity) - severityRank(a.severity))
-      .map((e: any) =>
-        [
-          `ID: ${e.id}`,
-          `Type: ${e.event_type}`,
-          `Severity: ${e.severity}`,
-          `Agent: ${e.source_agent}`,
-          `Customer: ${e.customers?.company_name ?? "Portfolio"}`,
-          `Title: ${e.title}`,
-          e.description ? `Detail: ${e.description}` : null,
-          `Date: ${e.created_at}`,
-        ]
-          .filter(Boolean)
-          .join("\n")
-      )
-      .join("\n\n");
+    if (data.payment_transactions.length > 0) {
+      contextParts.push("## PAYMENT TRANSACTIONS TABLE\n" + data.payment_transactions.map((p: any) =>
+        `- ${p.company_name}: paid $${p.amount_paid?.toLocaleString()} on ${p.payment_date}, days_to_pay=${p.days_to_pay}, days_early_late=${p.days_early_late} (${p.days_early_late > 0 ? "late" : p.days_early_late < 0 ? "early" : "on time"}), method=${p.payment_method}`
+      ).join("\n"));
+    }
 
-    const questionSystemPrompt = `You are a credit analyst assistant for CreditPilot. Answer the user's question based ONLY on the provided credit events.
+    if (data.negative_news.length > 0) {
+      contextParts.push("## NEGATIVE NEWS TABLE\n" + data.negative_news.map((n: any) =>
+        `- ${n.customers?.company_name ?? "Unknown"}: "${n.headline}" (${n.source}, ${n.news_date}), severity=${n.severity}, sentiment=${n.sentiment_score}`
+      ).join("\n"));
+    }
 
-Return ONLY valid JSON in this exact shape, no other text, no markdown code fences:
+    if (data.sec_filings.length > 0) {
+      contextParts.push("## SEC FILINGS TABLE\n" + data.sec_filings.map((f: any) =>
+        `- ${f.customers?.company_name ?? "Unknown"}: ${f.filing_type} filed ${f.filing_date}, risk_signals=[${(f.risk_signals ?? []).join(", ")}]`
+      ).join("\n"));
+    }
+
+    if (data.credit_events.length > 0) {
+      contextParts.push("## CREDIT EVENTS TABLE\n" + data.credit_events.map((e: any) =>
+        `- ID:${e.id} | ${e.customers?.company_name ?? "Portfolio"}: ${e.event_type} (${e.severity}) from ${e.source_agent} on ${e.created_at?.split("T")[0]} — ${e.title}${e.description ? ": " + e.description : ""}`
+      ).join("\n"));
+    }
+
+    const context = contextParts.join("\n\n");
+
+    const questionSystemPrompt = `You are the Credit Intelligence Agent (CIA) for CreditPilot — a Perplexity-style credit analyst that answers questions about a B2B trade credit portfolio.
+
+CRITICAL RULES:
+1. Answer ONLY from the data provided below. Never use training knowledge to fill gaps.
+2. If the data does not contain the answer, say exactly: "I don't have that information in the current data."
+3. Cite every specific fact with its source in parentheses — e.g. (customers table), (invoices table), (credit_events: NEGATIVE_NEWS_HIGH).
+4. Be specific: use exact amounts, dates, percentages from the data.
+5. If multiple data sources confirm the same fact, mention both.
+
+Return ONLY valid JSON in this exact shape, no other text:
 {
-  "answer": "2-3 paragraphs of analysis, markdown formatted with **bold key terms**",
+  "answer": "2-3 paragraphs of analysis, markdown formatted with **bold key terms** and inline source citations",
   "sources": [
     {
-      "event_id": "uuid",
+      "event_id": "uuid or null",
       "customer_name": "string",
-      "event_type": "string",
+      "event_type": "string — table name or event type",
       "severity": "critical|high|medium|low|info",
       "date": "ISO date string",
-      "agent": "string"
+      "agent": "string — source agent or table name"
     }
   ],
   "confidence": "High|Medium|Low",
-  "confidence_reason": "one sentence explaining confidence level"
-}
-
-Only include events in sources that directly support your answer.`;
+  "confidence_reason": "one sentence — High if data directly answers the question, Medium if partial, Low if inferred"
+}`;
 
     const model = DEMO_MODE ? "claude-haiku-4-5" : "claude-sonnet-4-20250514";
-    const maxTokens = DEMO_MODE ? 600 : 800;
+    const maxTokens = DEMO_MODE ? 800 : 1200;
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
 
@@ -404,12 +621,10 @@ Only include events in sources that directly support your answer.`;
         model,
         max_tokens: maxTokens,
         system: questionSystemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: `Question: ${question}\n\nCredit events:\n${eventsContext}`,
-          },
-        ],
+        messages: [{
+          role: "user",
+          content: `Question: ${question}\n\nRetrieved data from database:\n${context || "No relevant data found."}`,
+        }],
       });
 
       const text = extractText(message);
