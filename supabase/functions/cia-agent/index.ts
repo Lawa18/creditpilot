@@ -358,7 +358,7 @@ async function fetchRelevantData(
         .from("customers")
         .select("id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags")
         .order("company_name")
-        .limit(20);
+        .limit(60);
 
       if (words.length > 0) {
         // Specific company names were mentioned — search for them
@@ -567,7 +567,7 @@ serve(async (req: Request) => {
 
     if (data.customers.length > 0) {
       contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
-        `- ${c.company_name} (${c.company_type}): credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, risk_tags=[${(c.risk_tags ?? []).join(", ")}]`
+        `- ${c.company_name} (type:${c.company_type}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, scenario=${c.scenario ?? "N/A"}, risk_tags=[${(c.risk_tags ?? []).join(", ")}])`
       ).join("\n"));
     }
 
