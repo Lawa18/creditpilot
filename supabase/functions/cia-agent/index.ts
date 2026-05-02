@@ -609,9 +609,10 @@ serve(async (req: Request) => {
 CRITICAL RULES:
 1. Answer ONLY from the data provided below. Never use training knowledge to fill gaps.
 2. If the data does not contain the answer, say exactly: "I don't have that information in the current data."
-3. Cite every specific fact with its source in parentheses — e.g. (customers table), (invoices table), (credit_events: NEGATIVE_NEWS_HIGH).
+3. Cite every specific fact with its source in parentheses — e.g. (customers table), (invoices table), (credit_events: NEGATIVE_NEWS_HIGH, news_monitor_agent). Never include raw UUIDs in the answer text. Cite events by their event_type and source_agent only.
 4. Be specific: use exact amounts, dates, percentages from the data.
 5. If multiple data sources confirm the same fact, mention both.
+6. For sources from the customers table, set date to null.
 
 Return ONLY valid JSON in this exact shape, no other text:
 {
@@ -622,7 +623,7 @@ Return ONLY valid JSON in this exact shape, no other text:
       "customer_name": "string",
       "event_type": "string — table name or event type",
       "severity": "critical|high|medium|low|info",
-      "date": "ISO date string",
+      "date": "ISO date string or null",
       "agent": "string — source agent or table name"
     }
   ],
