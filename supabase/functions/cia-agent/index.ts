@@ -247,6 +247,11 @@ function extractText(message: Anthropic.Message): string {
     .join("");
 }
 
+function sanitize(s: string | null | undefined): string {
+  if (!s) return "";
+  return String(s).replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ").replace(/\r/g, "").trim();
+}
+
 // ─── Question router ─────────────────────────────────────────────────────────
 
 // Determines which tables are relevant to a question
@@ -339,41 +344,43 @@ async function fetchRelevantData(
         .limit(15);
 
       if (keywords.length > 0) {
-        console.log("DEBUG credit_events orFilter:", orFilter);
         const { data: filtered, error: filteredErr } = await q.or(orFilter);
-        if (filteredErr) console.log("DEBUG credit_events filtered error:", filteredErr.message);
+        if (filteredErr) console.error("credit_events filter error:", filteredErr.message);
         if (filtered && filtered.length >= 2) {
           results.credit_events = filtered;
           return;
         }
       }
       const { data: fallback, error: fallbackErr } = await q;
-      if (fallbackErr) console.log("DEBUG credit_events fallback error:", fallbackErr.message);
+      if (fallbackErr) console.error("credit_events fallback error:", fallbackErr.message);
       results.credit_events = fallback ?? [];
     })(),
 
-    // customers — search by name or return all
+    // customers — search by name or return top 20 by credit_limit (highest exposure first)
     tables.has("customers") && (async () => {
-      const baseQuery = supabase
-        .from("customers")
-        .select("id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags")
-        .order("company_name")
-        .limit(60);
+      const selectFields = "id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags";
 
       if (words.length > 0) {
-        // Specific company names were mentioned — search for them
+        // Specific company names mentioned — targeted name search
         const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
-        console.log("DEBUG customers nameFilter:", nameFilter);
-        const { data: named, error: namedErr } = await baseQuery.or(nameFilter);
-        if (namedErr) console.log("DEBUG customers named error:", namedErr.message);
-        // If we searched for a specific company and found nothing, return empty —
-        // don't fall back to the full list (would give Claude 20 unrelated customers)
+        const { data: named, error: namedErr } = await supabase
+          .from("customers")
+          .select(selectFields)
+          .or(nameFilter)
+          .order("company_name")
+          .limit(20);
+        if (namedErr) console.error("customers named error:", namedErr.message);
+        // Don't fall back to full list — return whatever the name search found (even empty)
         results.customers = named ?? [];
         return;
       }
-      // No company names mentioned — return full list for portfolio-level questions
-      const { data, error: allErr } = await baseQuery;
-      if (allErr) console.log("DEBUG customers all error:", allErr.message);
+      // No names mentioned — portfolio-level question: return top 20 by credit_limit desc
+      const { data, error: allErr } = await supabase
+        .from("customers")
+        .select(selectFields)
+        .order("credit_limit", { ascending: false })
+        .limit(20);
+      if (allErr) console.error("customers all error:", allErr.message);
       results.customers = data ?? [];
     })(),
 
@@ -382,7 +389,7 @@ async function fetchRelevantData(
       const { data: customers } = await supabase
         .from("customers")
         .select("id, company_name")
-        .limit(60);
+        .limit(20);
 
       const customerMap = Object.fromEntries((customers ?? []).map((c: any) => [c.id, c.company_name]));
 
@@ -415,7 +422,7 @@ async function fetchRelevantData(
       const { data: customers } = await supabase
         .from("customers")
         .select("id, company_name")
-        .limit(60);
+        .limit(20);
 
       let custIds: string[] = [];
       if (words.length > 0) {
@@ -550,59 +557,55 @@ serve(async (req: Request) => {
     if (!authHeader) return jsonRes({ error: "Unauthorized" }, 401);
     if (!question) return jsonRes({ error: "question is required" }, 400);
 
+    try {
+
     // Route question to relevant tables
     const tables = routeQuestion(question);
-    console.log("DEBUG tables:", [...tables]);
-    const STOPWORDS_DEBUG = new Set(["What", "Which", "Who", "How", "When", "Where", "Why", "The", "Their", "Corporation", "Company", "Group", "Inc", "Ltd", "LLC", "Current", "Credit", "Limit", "Balance", "And", "For", "Has", "Have", "Does", "Should", "Could", "Would", "Tell", "Show", "Give", "Get"]);
-    const debugWords = (question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? []).flatMap(p => p.split(" ")).filter(w => !STOPWORDS_DEBUG.has(w) && w.length > 2);
-    console.log("DEBUG words:", debugWords);
 
     // Fetch data from all relevant tables in parallel
     const data = await fetchRelevantData(supabaseClient, question, tables, DEMO_MODE);
-    console.log("DEBUG customers found:", data.customers.length);
-    console.log("DEBUG credit_events found:", data.credit_events.length);
 
-    // Build context string from all retrieved data
+    // Build context string — sanitize all text fields to prevent JSON parse errors
+    // in Claude's response (quotes, backslashes, newlines in DB fields break output JSON)
     const contextParts: string[] = [];
 
     if (data.customers.length > 0) {
       contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
-        `- ${c.company_name} (type:${c.company_type}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, scenario=${c.scenario ?? "N/A"}, risk_tags=[${(c.risk_tags ?? []).join(", ")}])`
+        `- ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, scenario=${sanitize(c.scenario) || "N/A"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}])`
       ).join("\n"));
     }
 
     if (data.invoices.length > 0) {
       contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any) =>
-        `- ${inv.company_name}: invoice ${inv.invoice_number}, amount=$${inv.invoice_amount?.toLocaleString()}, outstanding=$${inv.outstanding_amount?.toLocaleString()}, due=${inv.due_date}, status=${inv.status}, days_overdue=${inv.days_overdue}`
+        `- ${sanitize(inv.company_name)}: invoice ${sanitize(inv.invoice_number)}, amount=$${inv.invoice_amount?.toLocaleString()}, outstanding=$${inv.outstanding_amount?.toLocaleString()}, due=${inv.due_date}, status=${inv.status}, days_overdue=${inv.days_overdue}`
       ).join("\n"));
     }
 
     if (data.payment_transactions.length > 0) {
       contextParts.push("## PAYMENT TRANSACTIONS TABLE\n" + data.payment_transactions.map((p: any) =>
-        `- ${p.company_name}: paid $${p.amount_paid?.toLocaleString()} on ${p.payment_date}, days_to_pay=${p.days_to_pay}, days_early_late=${p.days_early_late} (${p.days_early_late > 0 ? "late" : p.days_early_late < 0 ? "early" : "on time"}), method=${p.payment_method}`
+        `- ${sanitize(p.company_name)}: paid $${p.amount_paid?.toLocaleString()} on ${p.payment_date}, days_to_pay=${p.days_to_pay}, days_early_late=${p.days_early_late} (${p.days_early_late > 0 ? "late" : p.days_early_late < 0 ? "early" : "on time"}), method=${p.payment_method}`
       ).join("\n"));
     }
 
     if (data.negative_news.length > 0) {
       contextParts.push("## NEGATIVE NEWS TABLE\n" + data.negative_news.map((n: any) =>
-        `- ${n.customers?.company_name ?? "Unknown"}: "${n.headline}" (${n.source}, ${n.news_date}), severity=${n.severity}, sentiment=${n.sentiment_score}`
+        `- ${sanitize(n.customers?.company_name) || "Unknown"}: ${sanitize(n.headline)} (${sanitize(n.source)}, ${n.news_date}), severity=${n.severity}, sentiment=${n.sentiment_score}`
       ).join("\n"));
     }
 
     if (data.sec_filings.length > 0) {
       contextParts.push("## SEC FILINGS TABLE\n" + data.sec_filings.map((f: any) =>
-        `- ${f.customers?.company_name ?? "Unknown"}: ${f.filing_type} filed ${f.filing_date}, risk_signals=[${(f.risk_signals ?? []).join(", ")}]`
+        `- ${sanitize(f.customers?.company_name) || "Unknown"}: ${f.filing_type} filed ${f.filing_date}, risk_signals=[${(f.risk_signals ?? []).map(sanitize).join(", ")}]`
       ).join("\n"));
     }
 
     if (data.credit_events.length > 0) {
       contextParts.push("## CREDIT EVENTS TABLE\n" + data.credit_events.map((e: any) =>
-        `- ID:${e.id} | ${e.customers?.company_name ?? "Portfolio"}: ${e.event_type} (${e.severity}) from ${e.source_agent} on ${e.created_at?.split("T")[0]} — ${e.title}${e.description ? ": " + e.description : ""}`
+        `- ${sanitize(e.customers?.company_name) || "Portfolio"}: ${e.event_type} (${e.severity}) from ${e.source_agent} on ${e.created_at?.split("T")[0]} — ${sanitize(e.title)}${e.description ? ": " + sanitize(e.description) : ""}`
       ).join("\n"));
     }
 
     const context = contextParts.join("\n\n");
-    console.log("DEBUG context length:", context.length);
 
     const questionSystemPrompt = `You are the Credit Intelligence Agent (CIA) for CreditPilot — a Perplexity-style credit analyst that answers questions about a B2B trade credit portfolio.
 
@@ -648,8 +651,14 @@ Return ONLY valid JSON in this exact shape, no other text:
       });
 
       const text = extractText(message);
-      const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
-      const result = JSON.parse(cleaned);
+      let result;
+      try {
+        const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+        result = JSON.parse(cleaned);
+      } catch (parseErr) {
+        console.error("JSON parse error:", parseErr, "Raw text:", text.slice(0, 200));
+        return jsonRes({ error: "Failed to parse answer" }, 500);
+      }
 
       // Generate contextual follow-up questions based on the answer
       let relatedQuestions = DEMO_SUGGESTIONS.slice(0, 3); // fallback
@@ -669,16 +678,19 @@ Return ONLY valid JSON in this exact shape, no other text:
         if (Array.isArray(parsed)) {
           relatedQuestions = parsed;
         }
-        // if parsed is not an array (e.g. {questions:[...]}) keep the fallback
       } catch {
-        // keep fallback
+        // keep fallback suggestions
       }
 
-      console.log("DEBUG relatedQuestions:", relatedQuestions);
       return jsonRes({ ...result, relatedQuestions });
     } catch (err) {
-      console.error("Question mode error:", err);
+      console.error("Question mode inner error (Anthropic):", err);
       return jsonRes({ error: "Failed to generate answer" }, 500);
+    }
+
+    } catch (outerErr) {
+      console.error("Question mode outer error:", outerErr instanceof Error ? outerErr.message : String(outerErr));
+      return jsonRes({ error: "Question mode failed", detail: outerErr instanceof Error ? outerErr.message : String(outerErr) }, 500);
     }
   }
 
