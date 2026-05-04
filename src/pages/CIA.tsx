@@ -91,6 +91,16 @@ function AnswerSkeleton({ question }: { question: string }) {
   );
 }
 
+// ─── Fallback suggestions ─────────────────────────────────────────────────────
+
+const DEMO_SUGGESTIONS = [
+  "Which customers have the highest credit risk right now?",
+  "Are there any customers with overdue invoices above $500k?",
+  "Which customers have recent negative news or SEC alerts?",
+  "What is the total portfolio exposure to high-risk customers?",
+  "Which customers have credit ratings below B+?",
+];
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function CIA() {
@@ -125,9 +135,10 @@ export default function CIA() {
   // Use contextual follow-up questions returned with the answer
   useEffect(() => {
     if (!answer) return;
-    if (Array.isArray(answer.relatedQuestions) && answer.relatedQuestions.length > 0) {
-      setRelated(answer.relatedQuestions.filter(s => s !== question).slice(0, 3));
-    }
+    const questions = Array.isArray(answer.relatedQuestions) && answer.relatedQuestions.length > 0
+      ? answer.relatedQuestions
+      : DEMO_SUGGESTIONS.slice(0, 3);
+    setRelated(questions.filter(s => s !== question).slice(0, 3));
   }, [answer, question]);
 
   const handleSourceClick = (eventId: string) => {
@@ -203,20 +214,24 @@ export default function CIA() {
                     <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
                   </button>
                 ))}
-
-                {/* Confidence */}
-                <div className="flex items-center gap-2 pt-1 pl-1">
-                  <span className={cn("text-sm font-medium", confidenceText(answer.confidence))}>
-                    Confidence: {answer.confidence}
-                  </span>
-                  <span className={cn("w-2 h-2 rounded-full", confidenceDot(answer.confidence))} />
-                </div>
-                {answer.confidence_reason && (
-                  <p className="text-xs text-muted-foreground italic pl-1">
-                    "{answer.confidence_reason}"
-                  </p>
-                )}
               </div>
+            </div>
+          )}
+
+          {/* Confidence — always shown when present */}
+          {answer.confidence && (
+            <div className="space-y-1 pl-1">
+              <div className="flex items-center gap-2">
+                <span className={cn("text-sm font-medium", confidenceText(answer.confidence))}>
+                  Confidence: {answer.confidence}
+                </span>
+                <span className={cn("w-2 h-2 rounded-full", confidenceDot(answer.confidence))} />
+              </div>
+              {answer.confidence_reason && (
+                <p className="text-xs text-muted-foreground italic">
+                  "{answer.confidence_reason}"
+                </p>
+              )}
             </div>
           )}
 
