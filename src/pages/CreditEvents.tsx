@@ -61,7 +61,7 @@ export default function CreditEvents() {
     : (pendingCount ?? 0) > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-48">
       <div>
         <h1 className="text-xl font-semibold text-foreground">Credit Events</h1>
         <p className="text-xs text-muted-foreground mt-1">

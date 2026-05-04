@@ -62,7 +62,7 @@ export default function SecFilings() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-48">
       <div>
         <h1 className="text-xl font-semibold text-foreground">SEC Filings</h1>
         <p className="text-xs text-muted-foreground mt-1">SEC filing data for monitored customers.</p>

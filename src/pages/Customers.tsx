@@ -58,7 +58,7 @@ export default function Customers() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-48">
       <h1 className="text-xl font-semibold text-foreground">Customers</h1>
 
       <div className="flex gap-3">

@@ -183,7 +183,7 @@ export default function ArAging() {
   if (pLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonTable /></div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-48">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-foreground">AR Aging</h1>
         <div className="flex items-center gap-2">

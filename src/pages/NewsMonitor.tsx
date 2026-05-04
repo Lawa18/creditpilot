@@ -49,7 +49,7 @@ export default function NewsMonitor() {
   if (isLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonTable rows={8} /></div>;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-48">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">News Monitor</h1>
