@@ -616,10 +616,11 @@ CRITICAL RULES:
 4. Be specific: use exact amounts, dates, percentages from the data.
 5. If multiple data sources confirm the same fact, mention both.
 6. For sources from the customers table, set date to null.
+7. Keep your answer concise — maximum 2 paragraphs. Never use backticks, never use single quotes inside JSON strings, use double quotes only.
 
 Return ONLY valid JSON in this exact shape, no other text:
 {
-  "answer": "2-3 paragraphs of analysis, markdown formatted with **bold key terms** and inline source citations",
+  "answer": "maximum 2 paragraphs of analysis, markdown formatted with **bold key terms** and inline source citations",
   "sources": [
     {
       "event_id": "uuid or null",
@@ -635,7 +636,7 @@ Return ONLY valid JSON in this exact shape, no other text:
 }`;
 
     const model = DEMO_MODE ? "claude-haiku-4-5" : "claude-sonnet-4-20250514";
-    const maxTokens = DEMO_MODE ? 800 : 1200;
+    const maxTokens = DEMO_MODE ? 600 : 900;
 
     const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
 
@@ -653,9 +654,25 @@ Return ONLY valid JSON in this exact shape, no other text:
       const text = extractText(message);
       let result;
       try {
-        const cleaned = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/\s*```$/i, "").trim();
+        const cleaned = text
+          .replace(/^```json\s*/i, "")
+          .replace(/^```\s*/i, "")
+          .replace(/\s*```$/i, "")
+          .replace(/[\x00-\x1F\x7F]/g, " ") // strip control characters
+          .trim();
         result = JSON.parse(cleaned);
       } catch (parseErr) {
+        // Regex fallback: extract answer field directly from malformed JSON
+        const answerMatch = text.match(/"answer"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+        if (answerMatch) {
+          return jsonRes({
+            answer: answerMatch[1].replace(/\\n/g, "\n"),
+            sources: [],
+            confidence: "Low",
+            confidence_reason: "Answer extracted from malformed response",
+            relatedQuestions: DEMO_SUGGESTIONS.slice(0, 3),
+          });
+        }
         console.error("JSON parse error:", parseErr, "Raw text:", text.slice(0, 200));
         return jsonRes({ error: "Failed to parse answer" }, 500);
       }
