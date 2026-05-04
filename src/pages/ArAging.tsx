@@ -275,7 +275,7 @@ export default function ArAging() {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Recent Agent Actions</h2>
           <div className="space-y-2">
             {(actions ?? []).length === 0 ? (
-              <p className="text-xs text-muted-foreground">No actions yet. Run the AR Aging agent from the Live Demo.</p>
+              <p className="text-xs text-muted-foreground">No recent agent actions. Actions will appear here after the AR Aging agent runs.</p>
             ) : (
               (actions ?? []).map((a: any) => (
                 <div key={a.id} className="bg-card rounded-lg border p-3 border-l-4 border-l-agent-aging">

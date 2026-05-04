@@ -93,7 +93,7 @@ export async function initDemo() {
   await supabase
     .from("negative_news")
     .update({ reviewed: false, reviewed_by: null, reviewed_at: null })
-    .not("id", "is", null);
+    .eq("is_demo", true);
 
   await supabase
     .from("credit_events")
