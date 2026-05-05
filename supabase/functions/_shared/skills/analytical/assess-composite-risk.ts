@@ -5,29 +5,36 @@
  *   SEC signals, and normalised credit score. Adjusts the utilization action threshold
  *   downward based on active negative signals, allowing multi-signal convergence to trigger
  *   earlier intervention than any single signal would alone.
+ *   Payment behaviour (on_time_rate) applies an additional penalty to the threshold.
  *
- *   Base threshold: 85% utilization triggers action.
- *   Adjustments (cumulative, floor at 40%):
+ *   Base threshold: 75% utilization triggers action.
+ *   Signal adjustments (cumulative, floor at 40%):
  *     NEGATIVE_NEWS_HIGH or NEGATIVE_NEWS_CRITICAL   −10pp
  *     GOING_CONCERN_WARNING                          −15pp
- *     COVENANT_WAIVER                                −10pp
+ *     COVENANT_WAIVER                                −12pp
  *     CEO_DEPARTURE                                  −5pp
+ *     CREDIT_RATING_DOWNGRADE                        −10pp
  *     credit_score < 20 (distress)                   −15pp
  *     credit_score 20–40 (concern)                   −5pp
+ *   Payment behaviour adjustments (applied after signal delta):
+ *     on_time_rate < 0.50                            −15pp
+ *     on_time_rate < 0.70                            −10pp
+ *     on_time_rate < 0.85                            −5pp
  *
  *   recommend_action is true when:
  *     utilization_pct >= adjusted_threshold, OR
  *     credit_score < 20 AND at least one signal is active, OR
  *     3+ distinct agents have flagged the same customer
  *
- *   Severity:
- *     3+ agents flagging       → critical
- *     2 agents flagging        → high
- *     1 agent + score < 20    → high
- *     1 agent only             → medium
- *     no signals               → info
+ *   Severity (weighted by agent count AND active signal severity):
+ *     3+ agents, OR 2+ agents with critical signal → critical
+ *     2+ agents, OR 1 agent with critical signal   → high
+ *     1 agent + active high-severity signal         → high
+ *     1 agent + score < 20 (distress)               → high
+ *     1 agent only                                  → medium
+ *     no signals                                    → info
  *
- * @input CompositeRiskInput
+ * @input CompositeRiskInput — includes optional on_time_rate and active_signal_severities
  * @output CompositeRiskResult
  * @usedBy cia-agent (briefing mode, Step 6b)
  */
@@ -37,8 +44,12 @@ export interface CompositeRiskInput {
   credit_score?: number | null;
   /** Event types currently active for this customer (from credit_events.event_type) */
   active_event_types: string[];
+  /** Severity values from active credit_events ('critical', 'high', 'medium', 'low', 'info') */
+  active_signal_severities?: string[];
   /** Unique source agents that have flagged this customer in the current run */
   agents_flagging: string[];
+  /** Payment on-time rate 0–1; adjusts threshold downward for poor payers */
+  on_time_rate?: number;
 }
 
 export interface CompositeRiskResult {
@@ -49,7 +60,7 @@ export interface CompositeRiskResult {
   adjustments: string[];
 }
 
-const BASE_THRESHOLD = 85;
+const BASE_THRESHOLD = 75;
 const THRESHOLD_FLOOR = 40;
 
 export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskResult {
@@ -57,7 +68,9 @@ export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskRes
     utilization_pct,
     credit_score = null,
     active_event_types,
+    active_signal_severities,
     agents_flagging,
+    on_time_rate,
   } = input;
 
   const adjustments: string[] = [];
@@ -75,13 +88,18 @@ export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskRes
   }
 
   if (active_event_types.includes("COVENANT_WAIVER")) {
-    delta += 10;
-    adjustments.push("COVENANT_WAIVER (−10pp)");
+    delta += 12;
+    adjustments.push("COVENANT_WAIVER (−12pp)");
   }
 
   if (active_event_types.includes("CEO_DEPARTURE")) {
     delta += 5;
     adjustments.push("CEO_DEPARTURE (−5pp)");
+  }
+
+  if (active_event_types.includes("CREDIT_RATING_DOWNGRADE")) {
+    delta += 10;
+    adjustments.push("CREDIT_RATING_DOWNGRADE (−10pp)");
   }
 
   // Credit score threshold adjustments
@@ -93,7 +111,15 @@ export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskRes
     adjustments.push(`credit_score concern 20–40 (−5pp)`);
   }
 
-  const adjusted_threshold = Math.max(THRESHOLD_FLOOR, BASE_THRESHOLD - delta);
+  // Payment behaviour adjusts threshold (same logic as calculate-credit-limit-proposal)
+  let paymentPenalty = 0;
+  if (on_time_rate !== undefined && on_time_rate !== null) {
+    if (on_time_rate < 0.50) { paymentPenalty = 15; adjustments.push("on_time_rate <50% (−15pp)"); }
+    else if (on_time_rate < 0.70) { paymentPenalty = 10; adjustments.push("on_time_rate <70% (−10pp)"); }
+    else if (on_time_rate < 0.85) { paymentPenalty = 5; adjustments.push("on_time_rate <85% (−5pp)"); }
+  }
+
+  const adjusted_threshold = Math.max(THRESHOLD_FLOOR, BASE_THRESHOLD - delta - paymentPenalty);
 
   // Determine whether action is recommended
   const hasActiveSignals = active_event_types.length > 0;
@@ -105,13 +131,18 @@ export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskRes
     (inDistress && hasActiveSignals) ||
     multiAgent;
 
-  // Determine severity
+  // Determine severity — weighted by agent count AND active signal severity
+  const hasCriticalSignal = active_signal_severities?.includes("critical") ?? false;
+  const hasHighSignal = active_signal_severities?.includes("high") ?? false;
+
   let severity: CompositeRiskResult["severity"];
-  if (agents_flagging.length >= 3) {
+  if (agents_flagging.length >= 3 || (agents_flagging.length >= 2 && hasCriticalSignal)) {
     severity = "critical";
-  } else if (agents_flagging.length === 2) {
+  } else if (agents_flagging.length >= 2 || (agents_flagging.length >= 1 && hasCriticalSignal)) {
     severity = "high";
-  } else if (agents_flagging.length === 1 && inDistress) {
+  } else if (agents_flagging.length >= 1 && hasHighSignal) {
+    severity = "high";
+  } else if (agents_flagging.length >= 1 && inDistress) {
     severity = "high";
   } else if (agents_flagging.length >= 1) {
     severity = "medium";

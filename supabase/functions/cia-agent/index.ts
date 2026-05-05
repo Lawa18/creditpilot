@@ -907,8 +907,10 @@ Return ONLY valid JSON in this exact shape, no other text:
 
     const agentsSeen = [...new Set(custEvents.map((e: any) => e.source_agent as string))];
     const activeEventTypes = [...new Set(custEvents.map((e: any) => e.event_type as string))];
+    const activeSignalSeverities = custEvents.map((e: any) => e.severity as string);
     const creditScore: number | null = (custEvents[0] as any)?.credit_rating_score ?? null;
-    const utilizationPct: number = (custEvents.find((e: any) => e.payload?.utilization_pct != null) as any)?.payload?.utilization_pct ?? 0;
+    const arEvent = custEvents.find((e: any) => e.payload?.utilization_pct != null) as any;
+    const utilizationPct: number = arEvent?.payload?.utilization_pct ?? 0;
     const daysOver90: number = (custEvents.find((e: any) => e.payload?.buckets?.bucket_over_90 != null) as any)?.payload?.buckets?.bucket_over_90 ?? 0;
     const currentExposure: number = customer.current_exposure ?? 0;
 
@@ -916,7 +918,9 @@ Return ONLY valid JSON in this exact shape, no other text:
       utilization_pct: utilizationPct,
       credit_score: creditScore,
       active_event_types: activeEventTypes,
+      active_signal_severities: activeSignalSeverities,
       agents_flagging: agentsSeen,
+      on_time_rate: arEvent?.payload?.on_time_rate ?? undefined,
     });
 
     if (!riskAssessment.recommend_action) continue;
