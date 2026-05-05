@@ -140,6 +140,15 @@ Deno.serve(async (req) => {
 
       const behaviour = analysePaymentBehaviour(transactions ?? []);
 
+      // Write payment behaviour to customers table for CIA agent to read
+      await supabase.from("customers").update({
+        payment_on_time_rate: behaviour.on_time_rate,
+        payment_avg_days_early_late: behaviour.avg_days_early_late,
+        payment_trend: behaviour.trend,
+        payment_health: behaviour.health,
+        payment_behaviour_updated_at: new Date().toISOString(),
+      }).eq("id", customerId);
+
       // Determine severity and event types for credit_events
       const creditRatingScore = cust.credit_rating_score ?? null;
       const creditRatingSource = cust.credit_rating_source ?? null;

@@ -358,7 +358,7 @@ async function fetchRelevantData(
 
     // customers — search by name or return top 20 by credit_limit (highest exposure first)
     tables.has("customers") && (async () => {
-      const selectFields = "id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags";
+      const selectFields = "id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags, payment_on_time_rate, payment_trend, payment_health";
 
       if (words.length > 0) {
         // Specific company names mentioned — targeted name search
@@ -571,7 +571,7 @@ serve(async (req: Request) => {
 
     if (data.customers.length > 0) {
       contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
-        `- ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, scenario=${sanitize(c.scenario) || "N/A"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}])`
+        `- ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}])`
       ).join("\n"));
     }
 
@@ -795,7 +795,7 @@ Return ONLY valid JSON in this exact shape, no other text:
   const customerIds = [...new Set(events.map((e: any) => e.customer_id).filter(Boolean))] as string[];
   const { data: customers } = await supabaseClient
     .from("customers")
-    .select("id, name, ticker, company_type, credit_limit, current_exposure")
+    .select("id, name, ticker, company_type, credit_limit, current_exposure, payment_on_time_rate, payment_trend, payment_health")
     .in("id", customerIds);
 
   // 4. Call Claude
@@ -914,13 +914,15 @@ Return ONLY valid JSON in this exact shape, no other text:
     const daysOver90: number = (custEvents.find((e: any) => e.payload?.buckets?.bucket_over_90 != null) as any)?.payload?.buckets?.bucket_over_90 ?? 0;
     const currentExposure: number = customer.current_exposure ?? 0;
 
+    const onTimeRate: number | undefined = (customer as any)?.payment_on_time_rate ?? undefined;
+
     const riskAssessment = assessCompositeRisk({
       utilization_pct: utilizationPct,
       credit_score: creditScore,
       active_event_types: activeEventTypes,
       active_signal_severities: activeSignalSeverities,
       agents_flagging: agentsSeen,
-      on_time_rate: arEvent?.payload?.on_time_rate ?? undefined,
+      on_time_rate: onTimeRate,
     });
 
     if (!riskAssessment.recommend_action) continue;
@@ -931,6 +933,7 @@ Return ONLY valid JSON in this exact shape, no other text:
       days_over_90: daysOver90,
       utilization_pct: utilizationPct,
       credit_score: creditScore,
+      on_time_rate: onTimeRate,
     });
 
     if (proposal.action !== "reduce") continue;
