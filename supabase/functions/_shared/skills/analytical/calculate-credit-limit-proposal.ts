@@ -2,9 +2,11 @@
  * @skill calculate-credit-limit-proposal
  * @type analytical
  * @description Proposes a revised credit limit based on utilization, overdue balance,
- *   normalised credit score (0–100), and whether the customer is a preferred account.
+ *   normalised credit score (0–100), and whether the customer is a strategic account.
  *   Enforces a minimum 25% reduction once criteria for action are met.
- *   Preferred customers receive 10pp latitude on utilization thresholds.
+ *   Strategic accounts receive 10pp latitude on utilization thresholds.
+ *   Payment behaviour (on_time_rate) adjusts utilization thresholds broadly:
+ *   poor payers trigger action at lower utilization levels.
  *
  *   Credit score thresholds:
  *     < 20  → treat as distress
@@ -23,7 +25,7 @@ export interface CreditLimitInput {
   days_over_90: number;
   utilization_pct: number;          // 0–100
   credit_score?: number | null;     // 0–100 normalised score; null = unavailable
-  is_preferred_customer?: boolean;
+  is_strategic_account?: boolean;
   on_time_rate?: number;            // 0–1, from payment history
 }
 
@@ -42,7 +44,7 @@ export function calculateCreditLimitProposal(
     days_over_90,
     utilization_pct,
     credit_score = null,
-    is_preferred_customer = false,
+    is_strategic_account = false,
     on_time_rate = 1,
   } = input;
 
@@ -58,11 +60,18 @@ export function calculateCreditLimitProposal(
   // Map normalised credit score to risk category
   const inDistress = credit_score !== null && credit_score < 20;
   const inGrey = credit_score !== null && credit_score >= 20 && credit_score <= 40;
-  const highOverdue = days_over_90 > 50_000;
+  const highOverdue = days_over_90 > current_limit * 0.10;
 
-  // Preferred customers get 10pp latitude — thresholds are higher before action triggers
-  const highUtilThreshold = is_preferred_customer ? 80 : 70;
-  const criticalUtilThreshold = is_preferred_customer ? 90 : 85;
+  // Payment behaviour adjusts utilization thresholds
+  // Poor payers trigger action at lower utilization levels
+  let paymentPenalty = 0;
+  if (on_time_rate < 0.50) paymentPenalty = 15;       // seriously struggling
+  else if (on_time_rate < 0.70) paymentPenalty = 10;  // below acceptable
+  else if (on_time_rate < 0.85) paymentPenalty = 5;   // slightly below ideal
+
+  // Strategic accounts get 10pp latitude — thresholds are higher before action triggers
+  const highUtilThreshold = (is_strategic_account ? 80 : 70) - paymentPenalty;
+  const criticalUtilThreshold = (is_strategic_account ? 90 : 85) - paymentPenalty;
   const highUtil = utilization_pct > highUtilThreshold;
   const criticalUtil = utilization_pct > criticalUtilThreshold;
 
@@ -70,16 +79,16 @@ export function calculateCreditLimitProposal(
   let rationale = "";
 
   if (inDistress && highOverdue) {
-    reductionFactor = is_preferred_customer ? 0.40 : 0.50;
+    reductionFactor = is_strategic_account ? 0.40 : 0.50;
     rationale = `Customer credit score in distress range (${credit_score}) with $${(days_over_90 / 1000).toFixed(0)}K over 90 days past due. Significant limit reduction warranted.`;
   } else if (inDistress && highUtil) {
-    reductionFactor = is_preferred_customer ? 0.30 : 0.40;
+    reductionFactor = is_strategic_account ? 0.30 : 0.40;
     rationale = `Distress credit score (${credit_score}) with ${utilization_pct}% utilization. Limit reduction to protect exposure.`;
   } else if (criticalUtil && highOverdue) {
-    reductionFactor = is_preferred_customer ? 0.25 : 0.35;
+    reductionFactor = is_strategic_account ? 0.25 : 0.35;
     rationale = `Critical utilization (${utilization_pct}%) combined with $${(days_over_90 / 1000).toFixed(0)}K over 90 days.`;
   } else if (highUtil && highOverdue) {
-    reductionFactor = is_preferred_customer ? 0.20 : 0.30;
+    reductionFactor = is_strategic_account ? 0.20 : 0.30;
     rationale = `High utilization (${utilization_pct}%) with $${(days_over_90 / 1000).toFixed(0)}K overdue balance.`;
   } else if (inGrey && highOverdue && on_time_rate < 0.7) {
     reductionFactor = 0.25;
@@ -95,8 +104,8 @@ export function calculateCreditLimitProposal(
     };
   }
 
-  // Enforce minimum 25% reduction for non-preferred customers once action is triggered
-  if (!is_preferred_customer && reductionFactor < 0.25) {
+  // Enforce minimum 25% reduction for non-strategic-account customers once action is triggered
+  if (!is_strategic_account && reductionFactor < 0.25) {
     reductionFactor = 0.25;
   }
 
