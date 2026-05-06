@@ -140,6 +140,14 @@ Deno.serve(async (req) => {
 
       const behaviour = analysePaymentBehaviour(transactions ?? []);
 
+      // NOTE: credit_rating_previous_score should be updated by any agent that
+      // receives a new credit score. Pattern:
+      //   1. Read current credit_rating_score from customers table
+      //   2. Write it to credit_rating_previous_score
+      //   3. Write the new score to credit_rating_score
+      //   4. detectRatingChange() in CIA briefing mode will detect the delta
+      //      and inject CREDIT_RATING_DOWNGRADE as a synthetic event if action_required
+
       // Write payment behaviour to customers table for CIA agent to read
       await supabase.from("customers").update({
         payment_on_time_rate: behaviour.on_time_rate,

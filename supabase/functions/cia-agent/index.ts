@@ -49,6 +49,7 @@ import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.27.0";
 import { assessCompositeRisk } from "../_shared/skills/analytical/assess-composite-risk.ts";
 import { calculateCreditLimitProposal } from "../_shared/skills/analytical/calculate-credit-limit-proposal.ts";
 import { aggregateCreditScores } from "../_shared/skills/analytical/aggregate-credit-scores.ts";
+import { detectRatingChange } from "../_shared/skills/analytical/detect-rating-change.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -796,8 +797,21 @@ Return ONLY valid JSON in this exact shape, no other text:
   const customerIds = [...new Set(events.map((e: any) => e.customer_id).filter(Boolean))] as string[];
   const { data: customers } = await supabaseClient
     .from("customers")
-    .select("id, name, ticker, company_type, credit_limit, current_exposure, payment_on_time_rate, payment_trend, payment_health")
+    .select("id, name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_previous_score, payment_on_time_rate, payment_trend, payment_health")
     .in("id", customerIds);
+
+  // Detect rating changes and inject as synthetic events
+  const syntheticEvents: Record<string, string[]> = {};
+  for (const customer of (customers ?? [])) {
+    const c = customer as any;
+    if (c.credit_rating_score != null && c.credit_rating_previous_score != null) {
+      const change = detectRatingChange(c.credit_rating_previous_score, c.credit_rating_score);
+      if (change.type === "CREDIT_RATING_DOWNGRADE" && change.action_required) {
+        syntheticEvents[c.id] = syntheticEvents[c.id] ?? [];
+        syntheticEvents[c.id].push("CREDIT_RATING_DOWNGRADE");
+      }
+    }
+  }
 
   // 4. Call Claude
   const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
@@ -909,6 +923,12 @@ Return ONLY valid JSON in this exact shape, no other text:
     const agentsSeen = [...new Set(custEvents.map((e: any) => e.source_agent as string))];
     const activeEventTypes = [...new Set(custEvents.map((e: any) => e.event_type as string))];
     const activeSignalSeverities = custEvents.map((e: any) => e.severity as string);
+
+    // Merge synthetic events detected from DB column deltas (e.g. CREDIT_RATING_DOWNGRADE)
+    for (const syntheticType of (syntheticEvents[custId] ?? [])) {
+      if (!activeEventTypes.includes(syntheticType)) activeEventTypes.push(syntheticType);
+      activeSignalSeverities.push("high");
+    }
     const creditScore: number | null = (custEvents[0] as any)?.credit_rating_score ?? null;
     const arEvent = custEvents.find((e: any) => e.payload?.utilization_pct != null) as any;
     const utilizationPct: number = arEvent?.payload?.utilization_pct ?? 0;

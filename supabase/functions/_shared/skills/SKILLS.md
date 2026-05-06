@@ -133,6 +133,16 @@ Severity weighted by signal severity and agent count — not just agent count al
 **Outputs:** `type` (CREDIT_RATING_DOWNGRADE / CREDIT_RATING_UPGRADE / null), `severity`, `delta`, `action_required`
 **Connection to other skills:** output should feed CREDIT_RATING_DOWNGRADE into `assess-composite-risk` active_event_types
 **Tests:** 14 tests — all severity thresholds, upgrade vs downgrade, null for small changes
-**Status:** Built and tested. Needs wiring into CIA agent when new credit scores arrive.
+
+**Status:** Built, tested, and wired into CIA briefing mode via `syntheticEvents` pattern.
+- CIA reads `credit_rating_score` and `credit_rating_previous_score` from the customers table after step 3
+- For each customer with both scores, `detectRatingChange` is called; downgrades with `action_required=true` are injected as `CREDIT_RATING_DOWNGRADE` into `activeEventTypes` and `activeSignalSeverities` in step 6b
+- This means a rating downgrade feeds into `assess-composite-risk` even if no agent has filed a `CREDIT_RATING_DOWNGRADE` credit_event
+
+**To activate:** Any agent receiving a new credit score must write the previous score first:
+1. Read `credit_rating_score` from the customers table
+2. Write it to `credit_rating_previous_score`
+3. Write the new score to `credit_rating_score`
+CIA will detect the delta automatically on the next briefing run.
 
 ---
