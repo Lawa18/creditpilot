@@ -146,3 +146,8 @@ Severity weighted by signal severity and agent count — not just agent count al
 CIA will detect the delta automatically on the next briefing run.
 
 ---
+
+## Removed Skills
+
+### `calculate-altman-z.ts` (removed May 2026)
+Calculated Altman Z-score from 5 financial statement inputs. Removed because financial statement data (working capital, retained earnings, EBIT, equity, revenue) is not available via API for most customers. If financial statement data becomes available in future, this skill can be reintroduced.

@@ -213,7 +213,6 @@ Deno.serve(async (req) => {
           dso_days: cust.dso_days ?? 0,
           dunning_stage: dunningStage,
           on_time_rate: behaviour.on_time_rate,
-          altman_z_zone: null,
         },
         previous_value: null,
         new_value: cust.bucket_over_90 ?? 0,

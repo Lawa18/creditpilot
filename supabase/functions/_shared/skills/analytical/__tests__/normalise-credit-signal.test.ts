@@ -50,44 +50,6 @@ describe("normaliseCreditSignal", () => {
     expect(result.normalised_score).toBe(0);
   });
 
-  // --- Altman Z ---
-
-  it("Altman Z 3.5 → safe zone, score ≈ 62.5 (formula: (3.5+4)/12*100)", () => {
-    const result = normaliseCreditSignal(sig("altman_z", 3.5));
-    expect(result.normalised_score).toBeCloseTo(62.5, 1);
-    expect(result.interpretation).toBe("safe"); // 62.5 falls in the 60–79 band
-  });
-
-  it("Altman Z 2.4 → grey zone (40–70)", () => {
-    const result = normaliseCreditSignal(sig("altman_z", 2.4));
-    expect(result.normalised_score).toBeGreaterThanOrEqual(40);
-    expect(result.normalised_score).toBeLessThan(70);
-  });
-
-  it("Altman Z 1.2 → distress zone, score ≈ 43.3 (watch)", () => {
-    // Formula: (1.2 + 4) / 12 * 100 = 43.3 — distress zone but watch band
-    const result = normaliseCreditSignal(sig("altman_z", 1.2));
-    expect(result.normalised_score).toBeCloseTo(43.3, 1);
-    expect(result.interpretation).toBe("watch");
-  });
-
-  it("Altman Z 0 → distress zone, score ≈ 33.3 (concern)", () => {
-    // Formula: (0 + 4) / 12 * 100 = 33.3 — solidly in concern band
-    const result = normaliseCreditSignal(sig("altman_z", 0));
-    expect(result.normalised_score).toBeCloseTo(33.3, 1);
-    expect(result.interpretation).toBe("concern");
-  });
-
-  it("Altman Z -4 (worst) → 0 (clamped)", () => {
-    const result = normaliseCreditSignal(sig("altman_z", -4));
-    expect(result.normalised_score).toBe(0);
-  });
-
-  it("Altman Z 8 (best) → 100 (clamped)", () => {
-    const result = normaliseCreditSignal(sig("altman_z", 8));
-    expect(result.normalised_score).toBe(100);
-  });
-
   // --- Moody's ---
 
   it("Moody's 'Aaa' → 100", () => {

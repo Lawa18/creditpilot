@@ -15,7 +15,6 @@ export type SignalSource =
   | "dnb_failure_score"
   | "experian_intelliscore"
   | "equifax_business"
-  | "altman_z"
   | "moodys"
   | "sp_fitch"
   | "coface"
@@ -134,11 +133,6 @@ function normaliseValue(
     case "equifax_business":
       if (isNaN(num)) return { score: 50, valid: false };
       return { score: clamp((num - 101) / (992 - 101) * 100), valid: true };
-
-    // Altman Z: typically -4 to +8, higher = safer
-    case "altman_z":
-      if (isNaN(num)) return { score: 50, valid: false };
-      return { score: clamp((num + 4) / 12 * 100), valid: true };
 
     // D&B Failure Score: 1–100, higher = HIGHER risk → invert
     case "dnb_failure_score":
