@@ -147,6 +147,22 @@ CIA will detect the delta automatically on the next briefing run.
 
 ---
 
+### `normalise-credit-signal.ts`
+**Purpose:** Converts any credit score from any supported provider to a common 0-100 scale where higher = lower risk. The foundation for all credit scoring in CreditPilot — called by `aggregate-credit-scores` internally.
+**Called by:** `aggregate-credit-scores.ts` (internally)
+**Supported providers:** dnb_paydex, dnb_failure_score, experian_intelliscore, equifax_business, moodys, sp_fitch, coface, atradius, euler_hermes, internal_payment_score, manual, estimated
+**Key design decisions:**
+- Never throws — unknown inputs return score 50, confidence 'low'
+- Euler Hermes: 1-10 scale, 1=best (reversed) — (10-value)/9×100
+- Moody's and S&P/Fitch: full letter grade lookup tables including notches (AA+, AA, AA-)
+- D&B Failure Score is inverted (higher raw = higher risk, so normalised = 100 - value)
+
+**Interpretation bands:** very_safe ≥80, safe ≥60, watch ≥40, concern ≥20, high_risk <20
+**Outputs:** `normalised_score` (0-100), `interpretation`, `confidence`, original signal fields
+**Tests:** 36 tests — all providers, edge cases, fallback behaviour
+
+---
+
 ## Removed Skills
 
 ### `calculate-altman-z.ts` (removed May 2026)
