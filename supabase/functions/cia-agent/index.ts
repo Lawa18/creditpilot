@@ -48,6 +48,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Anthropic from "https://esm.sh/@anthropic-ai/sdk@0.27.0";
 import { assessCompositeRisk } from "../_shared/skills/analytical/assess-composite-risk.ts";
 import { calculateCreditLimitProposal } from "../_shared/skills/analytical/calculate-credit-limit-proposal.ts";
+import { aggregateCreditScores } from "../_shared/skills/analytical/aggregate-credit-scores.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -358,7 +359,7 @@ async function fetchRelevantData(
 
     // customers — search by name or return top 20 by credit_limit (highest exposure first)
     tables.has("customers") && (async () => {
-      const selectFields = "id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_source, scenario, risk_tags, flags, payment_on_time_rate, payment_trend, payment_health";
+      const selectFields = "id, company_name, ticker, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_raw, credit_rating_source, scenario, risk_tags, flags, payment_on_time_rate, payment_trend, payment_health";
 
       if (words.length > 0) {
         // Specific company names mentioned — targeted name search
@@ -571,7 +572,7 @@ serve(async (req: Request) => {
 
     if (data.customers.length > 0) {
       contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
-        `- ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, credit_score=${c.credit_rating_score ?? "N/A"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}])`
+        `- ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, ${c.credit_rating_score != null ? `credit_score=${c.credit_rating_score}/100 (${sanitize(c.credit_rating_raw) || "N/A"} from ${sanitize(c.credit_rating_source) || "N/A"})` : "credit_score=NR (No Rating, provider=N/A)"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}])`
       ).join("\n"));
     }
 

@@ -13,88 +13,81 @@ function sig(
 describe("aggregateCreditScores", () => {
   // ── Empty / null input ────────────────────────────────────────────────────
 
-  it("empty array → score 50, confidence low, source_count 0", () => {
+  it("empty array → final_score null, interpretation NR, source_count 0", () => {
     const result = aggregateCreditScores([]);
-    expect(result.final_score).toBe(50);
-    expect(result.confidence).toBe("low");
+    expect(result.final_score).toBeNull();
+    expect(result.interpretation).toBe("NR");
     expect(result.source_count).toBe(0);
+    expect(result.source_providers).toHaveLength(0);
     expect(result.sources).toHaveLength(0);
-    expect(result.interpretation).toBe("watch");
   });
 
-  it("null input → score 50, confidence low", () => {
+  it("null input → final_score null, interpretation NR", () => {
     const result = aggregateCreditScores(null as any);
-    expect(result.final_score).toBe(50);
-    expect(result.confidence).toBe("low");
+    expect(result.final_score).toBeNull();
+    expect(result.interpretation).toBe("NR");
   });
 
   // ── Single source ─────────────────────────────────────────────────────────
 
-  it("single source → uses that score, confidence = low", () => {
+  it("single source → score equals normalised score directly", () => {
     const result = aggregateCreditScores([sig("dnb_paydex", 80)]);
     expect(result.final_score).toBe(80);
-    expect(result.confidence).toBe("low");
     expect(result.source_count).toBe(1);
+    expect(result.source_providers).toEqual(["dnb_paydex"]);
   });
 
-  it("single high-authority source (S&P AAA) → score 100, confidence low", () => {
+  it("single high-authority source (S&P AAA) → score 100", () => {
     const result = aggregateCreditScores([sig("sp_fitch", "AAA")]);
     expect(result.final_score).toBe(100);
-    expect(result.confidence).toBe("low");
+    expect(result.source_providers).toEqual(["sp_fitch"]);
   });
 
   // ── Two sources ───────────────────────────────────────────────────────────
 
-  it("two sources → weighted average, confidence = medium", () => {
-    // moodys weight 1.0, score from "Aaa" = 100
-    // dnb_paydex weight 0.8, score = 60
-    // weighted avg = (100*1.0 + 60*0.8) / (1.0 + 0.8) = (100 + 48) / 1.8 = 82.2
+  it("two sources → simple average (no weights applied)", () => {
+    // moodys "Aaa" = 100, dnb_paydex 60 = 60
+    // simple avg = (100 + 60) / 2 = 80
     const result = aggregateCreditScores([
       sig("moodys", "Aaa"),
       sig("dnb_paydex", 60),
     ]);
-    expect(result.confidence).toBe("medium");
     expect(result.source_count).toBe(2);
-    expect(result.final_score).toBeCloseTo(82.2, 1);
+    expect(result.final_score).toBeCloseTo(80, 1);
+    expect(result.source_providers).toEqual(["moodys", "dnb_paydex"]);
   });
 
   // ── Three sources ─────────────────────────────────────────────────────────
 
-  it("three sources → confidence = high", () => {
+  it("three sources → simple average, source_providers lists all three", () => {
     const result = aggregateCreditScores([
-      sig("moodys", "Baa2"),   // 70, weight 1.0
-      sig("dnb_paydex", 80),   // 80, weight 0.8
-      sig("coface", 6),        // 60, weight 0.9
+      sig("moodys", "Baa2"),   // 70
+      sig("dnb_paydex", 80),   // 80
+      sig("coface", 6),        // 60
     ]);
-    expect(result.confidence).toBe("high");
     expect(result.source_count).toBe(3);
-    expect(result.final_score).toBeGreaterThan(0);
+    // simple avg = (70 + 80 + 60) / 3 ≈ 70
+    expect(result.final_score).toBeCloseTo(70, 1);
+    expect(result.source_providers).toEqual(["moodys", "dnb_paydex", "coface"]);
   });
 
-  it("four sources → confidence still high (3+ threshold)", () => {
+  it("four sources → source_count 4, all providers listed", () => {
     const result = aggregateCreditScores([
       sig("moodys", "Aaa"),
       sig("sp_fitch", "AAA"),
       sig("dnb_paydex", 90),
       sig("coface", 9),
     ]);
-    expect(result.confidence).toBe("high");
     expect(result.source_count).toBe(4);
+    expect(result.source_providers).toHaveLength(4);
   });
 
   // ── Unknown provider ──────────────────────────────────────────────────────
 
-  it("unknown provider source → uses fallback weight 0.5", () => {
-    // Pass a signal typed as CreditSignal but with an unrecognised source
-    const unknownSignal: CreditSignal = {
-      source: "manual" as CreditSignal["source"], // manual is known, weight 0.5
-      raw_value: 70,
-      as_of_date: "2026-01-01",
-      confidence: "high",
-    };
-    const result = aggregateCreditScores([unknownSignal]);
-    expect(result.sources[0].weight).toBe(0.5);
+  it("any provider → score is its normalised score (no weight advantage)", () => {
+    const result = aggregateCreditScores([sig("manual", 70)]);
     expect(result.final_score).toBe(70);
+    expect(result.source_providers).toEqual(["manual"]);
   });
 
   // ── Interpretation bands ──────────────────────────────────────────────────
@@ -126,25 +119,25 @@ describe("aggregateCreditScores", () => {
 
   // ── Source breakdown ──────────────────────────────────────────────────────
 
-  it("sources array contains provider, raw_score, normalised_score, weight", () => {
+  it("sources array contains provider, raw_score, normalised_score (no weight field)", () => {
     const result = aggregateCreditScores([sig("sp_fitch", "BBB+")]);
     const src = result.sources[0];
     expect(src.provider).toBe("sp_fitch");
     expect(src.raw_score).toBe("BBB+");
     expect(src.normalised_score).toBe(75);
-    expect(src.weight).toBe(1.0);
+    expect((src as any).weight).toBeUndefined();
   });
 
-  // ── Higher-weight provider influences result more ─────────────────────────
+  // ── Equal weighting between providers ────────────────────────────────────
 
-  it("higher-weight provider pulls final score more than lower-weight one", () => {
-    // moodys (w=1.0) at 30 vs estimated (w=0.3) at 90
-    // expected avg: (30*1.0 + 90*0.3) / (1.0 + 0.3) = (30+27)/1.3 = 43.8
+  it("all providers contribute equally — final score is midpoint of two signals", () => {
+    // moodys "B1" ≈ 33, estimated 90 → simple avg ≈ 61.5
     const result = aggregateCreditScores([
-      sig("moodys", "B1"),     // 33, weight 1.0
-      sig("estimated", 90),    // 90, weight 0.3
+      sig("moodys", "B1"),   // ~33
+      sig("estimated", 90),  // 90
     ]);
-    // final_score should be closer to 33 than to 90
-    expect(result.final_score).toBeLessThan(60);
+    // With equal weights, result should be approximately midpoint (not pulled toward moodys)
+    expect(result.final_score).toBeGreaterThan(50);
+    expect(result.final_score).toBeLessThan(80);
   });
 });

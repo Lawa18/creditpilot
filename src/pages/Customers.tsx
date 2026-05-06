@@ -107,7 +107,7 @@ export default function Customers() {
                     <td className="p-3 text-right">{formatCurrency(c.current_exposure)}</td>
                     <td className="p-3 text-right">{util.toFixed(1)}%</td>
                     <td className={cn("p-3 text-right font-medium", scoreColor(score))}>
-                      {score ?? "—"}
+                      {score != null ? score : <span className="text-muted-foreground font-normal">NR</span>}
                     </td>
                     <td className="p-3">
                       <div className="flex gap-1 flex-wrap max-w-[200px]">
@@ -212,12 +212,14 @@ function CustomerDetail({ customer }: { customer: any }) {
           {/* Credit Score */}
           <div className="bg-secondary/50 rounded-lg p-3">
             <p className="text-[10px] text-muted-foreground uppercase">Credit Score</p>
-            <p className={cn("text-2xl font-bold", score == null ? "text-foreground" : scoreColor(score))}>
-              {score ?? "—"}
+            <p className={cn("text-2xl font-bold", score == null ? "text-muted-foreground" : scoreColor(score))}>
+              {score != null ? score : "No Rating"}
             </p>
-            {customer.credit_rating_source && (
+            {score != null && customer.credit_rating_source ? (
               <p className="text-[10px] text-muted-foreground mt-0.5">{customer.credit_rating_source}</p>
-            )}
+            ) : score == null ? (
+              <p className="text-[10px] text-muted-foreground mt-0.5">Provider: N/A</p>
+            ) : null}
           </div>
 
           {/* Utilization Bar */}
