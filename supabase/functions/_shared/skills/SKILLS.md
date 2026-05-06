@@ -89,3 +89,50 @@ Severity weighted by signal severity and agent count — not just agent count al
 **Tests:** 11 tests — empty input, amount weighting, always-late-stable vs deteriorating, trend threshold boundary
 
 ---
+
+### `aggregate-credit-scores.ts`
+**Purpose:** Combines multiple credit signals from different providers into one authoritative 0-100 score. Simple average — no provider weighting, keeping it transparent and auditable.
+**Called by:** CIA agent (question and briefing modes — credit context for customers)
+**Inputs:**
+- `CreditSignal[]` — any mix of providers (S&P, Coface, D&B, Experian, internal etc)
+
+**Key design decisions:**
+- No provider weighting — simple average. Every rating source treated equally to keep the score transparent and auditable.
+- Empty input returns `final_score: null`, `interpretation: 'NR'` (No Rating) — never assumes a score of 50 for unrated customers
+- `source_providers[]` field makes it clear which providers contributed to the score
+- Frontend shows 'NR' and 'Provider: N/A' for unrated customers — never shows a dash that looks like missing data
+
+**Interpretation bands:**
+- very_safe ≥80, safe ≥60, watch ≥40, concern ≥20, high_risk <20, NR = no data
+
+**Outputs:** `final_score` (0-100 or null), `interpretation`, `source_count`, `source_providers[]`, `sources[]`
+**Connection to other skills:** calls `normalise-credit-signal` internally for each signal
+**Tests:** 15 tests — NR for empty, simple average verification, source_providers accuracy
+
+---
+
+### `detect-rating-change.ts`
+**Purpose:** Detects meaningful credit rating upgrades and downgrades by comparing current normalised score to previous score. Returns null if change is not significant.
+**Called by:** CIA agent (planned — should fire when a new credit score is received)
+**Inputs:**
+- `previousScore: number` — prior normalised score (0-100)
+- `currentScore: number` — new normalised score (0-100)
+
+**Downgrade severity thresholds (absolute delta):**
+- ≥30 points → critical
+- ≥20 points → high
+- ≥10 points → medium
+- ≥5 points → low
+- <5 points → no significant change (returns null type)
+
+**Key design decisions:**
+- Upgrades return severity 'info' and action_required=false — informational only
+- Downgrades ≥10 points set action_required=true
+- <5 point changes ignored — normal score fluctuation
+
+**Outputs:** `type` (CREDIT_RATING_DOWNGRADE / CREDIT_RATING_UPGRADE / null), `severity`, `delta`, `action_required`
+**Connection to other skills:** output should feed CREDIT_RATING_DOWNGRADE into `assess-composite-risk` active_event_types
+**Tests:** 14 tests — all severity thresholds, upgrade vs downgrade, null for small changes
+**Status:** Built and tested. Needs wiring into CIA agent when new credit scores arrive.
+
+---
