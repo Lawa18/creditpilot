@@ -50,6 +50,8 @@ These enable real message delivery. If not set, all messages fall back to `LogPr
 | `SENDGRID_API_KEY` | Enables email delivery via SendGrid |
 | `TEAMS_WEBHOOK_URL` | Enables Teams delivery via incoming webhook |
 | `SLACK_WEBHOOK_URL` | Enables Slack delivery via incoming webhook |
+| `ATRADIUS_API_KEY` | Optional — enables Atradius credit score fetching |
+| `EULER_HERMES_API_KEY` | Optional — enables Euler Hermes credit score fetching |
 
 ---
 
@@ -135,5 +137,7 @@ In Vercel → Project → Settings → Domains, add your domain and follow the D
 | `SENDGRID_API_KEY` | No | Enables email delivery via SendGrid |
 | `TEAMS_WEBHOOK_URL` | No | Enables Teams delivery via incoming webhook |
 | `SLACK_WEBHOOK_URL` | No | Enables Slack delivery via incoming webhook |
+| `ATRADIUS_API_KEY` | No | Enables Atradius credit score fetching |
+| `EULER_HERMES_API_KEY` | No | Enables Euler Hermes credit score fetching |
 
 No delivery keys are needed for demo mode — `LogProvider` fallback logs all messages to the console.

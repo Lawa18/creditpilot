@@ -66,11 +66,56 @@ export class CofaceProvider implements CreditScoreProvider {
   }
 }
 
+// ─── Atradius stub ────────────────────────────────────────────────────────────
+
+/** Atradius — ready to wire when Atradius API access is available. */
+export class AtradiusProvider implements CreditScoreProvider {
+  readonly name = "atradius";
+
+  constructor(private readonly apiKey: string) {}
+
+  async fetchScore(
+    _companyName: string,
+    _identifier?: string
+  ): Promise<CreditSignal | null> {
+    if (!this.apiKey) return null;
+    // Wire up: Atradius Atrium API
+    // https://developer.atradius.com/
+    // Response: buyer credit limit recommendation and risk category (1-10 scale)
+    // Map to CreditSignal: source='atradius', raw_value=riskCategory (1-10)
+    return null;
+  }
+}
+
+// ─── Euler Hermes stub ────────────────────────────────────────────────────────
+
+/** Euler Hermes (Allianz Trade) — ready to wire when API access is available. */
+export class EulerHermesProvider implements CreditScoreProvider {
+  readonly name = "euler_hermes";
+
+  constructor(private readonly apiKey: string) {}
+
+  async fetchScore(
+    _companyName: string,
+    _identifier?: string
+  ): Promise<CreditSignal | null> {
+    if (!this.apiKey) return null;
+    // Wire up: Euler Hermes Grade API
+    // https://developer.eulerhermes.com/
+    // Response: grade on 1-6 scale (1=best, reversed)
+    // Map to CreditSignal: source='euler_hermes', raw_value=grade (1-6)
+    // Note: normalise-credit-signal handles the 1-10 reversed scale correctly
+    return null;
+  }
+}
+
 // ─── Main fetch function ──────────────────────────────────────────────────────
 
 /**
  * Runs all providers in parallel. Returns only non-null results.
  * Never throws — any individual provider failure is swallowed.
+ * Available providers: DnBProvider, CofaceProvider, AtradiusProvider, EulerHermesProvider
+ * All return null until API keys are configured — safe to include unused providers
  */
 export async function fetchCreditScores(input: {
   company_name: string;
