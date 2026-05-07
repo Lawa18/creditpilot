@@ -105,6 +105,7 @@ Reusable logic (Claude API calls, financial calculations) goes in `supabase/func
 - [ ] No hardcoded secrets or API keys
 - [ ] Edge function includes rate-limit guard
 - [ ] Documentation updated if behaviour changed
+- [ ] If a skill was added, modified, or removed: `supabase/functions/_shared/skills/SKILLS.md` updated
 
 ---
 
