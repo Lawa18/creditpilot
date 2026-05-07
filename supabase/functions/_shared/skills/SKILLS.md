@@ -225,6 +225,61 @@ CIA will detect the delta automatically on the next briefing run.
 
 ---
 
+## Integration Skills
+
+### `search-news.ts`
+**Purpose:** Provider-agnostic news search. Fetches recent negative news about a company from one or more providers, deduplicates by URL, and returns a standardised RawArticle array.
+**Called by:** News monitor agent
+**Inputs:** company_name, ticker, days_back, max_results, providers (NewsProvider[])
+**Key design decisions:**
+- Provider interface pattern — adding a new provider (Reuters, Google News) requires implementing one interface only, zero agent changes
+- URL deduplication across providers — same article from two sources counted once
+- `generateFingerprint()` exported for cross-run deduplication — stored in negative_news.content_fingerprint
+- published_date maps to news_date in negative_news table (documented in code)
+- Returns [] on complete failure — never throws
+
+**Current providers:** TavilyProvider (live), stub pattern ready for Google News, Reuters
+**Outputs:** RawArticle[] — headline, summary, url, source, published_date, relevance_score, provider
+**Tests:** covered by news monitor agent integration
+
+---
+
+### `fetch-credit-score.ts`
+**Purpose:** Provider-agnostic credit score fetcher. Returns CreditSignal[] from all configured providers, ready for normalise-credit-signal and aggregate-credit-scores.
+**Called by:** Not yet wired — stubs ready for activation when API keys available
+**Inputs:** company_name, identifier (DUNS/CIK/ticker), providers (CreditScoreProvider[])
+**Available providers (all stubbed, ready to wire):**
+- `DnBProvider` — D&B Paydex/Failure Score (DUNS number as identifier)
+- `CofaceProvider` — Coface grade (0-10 scale)
+- `AtradiusProvider` — Atradius risk category (1-10 scale)
+- `EulerHermesProvider` — Euler Hermes grade (1-6 scale, reversed — 1=best)
+
+**To activate a provider:** Set API key in Supabase secrets (ATRADIUS_API_KEY, EULER_HERMES_API_KEY etc) and implement the fetch call in the provider class. normalise-credit-signal handles all scale conversions automatically.
+**Outputs:** CreditSignal[] — one per provider that returned data
+
+---
+
+### `deliver-message.ts`
+**Purpose:** Provider-agnostic message delivery. Tries configured providers in order, falls back to LogProvider if all fail. Never throws.
+**Called by:** AR aging agent, news monitor agent, SEC monitor agent, CIA agent
+**Inputs:** OutboundMessage (channel, recipient, subject, body), providers (MessageProvider[])
+**Available providers:**
+- `LogProvider` — always available, logs to console, always succeeds (fallback)
+- `EmailProvider` — SendGrid or Postmark (set SENDGRID_API_KEY)
+- `TeamsProvider` — MS Teams webhook (set TEAMS_WEBHOOK_URL)
+- `SlackProvider` — Slack webhook (set SLACK_WEBHOOK_URL)
+
+**Key design decisions:**
+- LogProvider always appended as final fallback — agents never fail due to delivery issues
+- Multiple providers run in sequence, first success wins
+- All agents insert to agent_messages table as audit trail regardless of delivery result
+
+**To activate delivery:** Set env vars in Supabase secrets. No code changes needed.
+**Outputs:** DeliveryResult — success, provider used, message_id, error if any
+**Tests:** 5 tests — LogProvider success, stubs return failure, fallback chain
+
+---
+
 ## Removed Skills
 
 ### `calculate-altman-z.ts` (removed May 2026)
