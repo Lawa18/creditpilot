@@ -163,6 +163,31 @@ CIA will detect the delta automatically on the next briefing run.
 
 ---
 
+### `parse-ar-csv.ts`
+**Purpose:** Parses AR aging CSV exports from any ERP system into standardised invoice records. Auto-maps 40+ column name aliases. Used by the CSV upload flow.
+**Called by:** `ar-csv-upload` edge function
+**Inputs:**
+- `csvText: string` — raw CSV content
+- `columnMap?: Record<string, string>` — manual column overrides (from mapping UI)
+- `as_of_date?: string` — report date for days_overdue calculation (defaults to today)
+- `customer_currency?: string` — expected currency for mismatch detection
+
+**Required fields:** invoice_number, customer_name, invoice_date, due_date, outstanding_amount
+
+**Key design decisions:**
+- Auto-maps common ERP column names (40+ aliases) — handles SAP, NetSuite, QuickBooks, Dynamics exports
+- Returns HTTP 422 with unmapped_columns when required fields cannot be auto-mapped — triggers column mapping UI
+- `as_of_date` parameter ensures days_overdue is correct for historical uploads (not calculated from today)
+- UTC arithmetic for days_overdue — eliminates timezone off-by-one errors
+- Validation warnings (non-blocking): outstanding > amount, >365 days overdue, zero/negative amounts
+- Currency warnings: flags invoices where currency differs from customer credit limit currency
+- Never throws — all errors collected in errors[] array, valid rows still returned
+
+**Outputs:** `invoices[]`, `errors[]`, `validation_warnings[]`, `currency_warnings[]`, `column_map`, `unmapped_columns`, `available_columns`
+**Tests:** 29 tests — required fields, as_of_date relative calculation, validation warnings, currency mismatch, delimiter detection
+
+---
+
 ## Removed Skills
 
 ### `calculate-altman-z.ts` (removed May 2026)
