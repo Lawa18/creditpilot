@@ -262,6 +262,8 @@ Deno.serve(async (req) => {
         utilization_pct: cust.utilization_pct ?? 0,
         on_time_rate: behaviour.on_time_rate,
         avg_days_early_late: behaviour.avg_days_early_late,
+        payment_health: behaviour.health,
+        is_strategic_account: false, // AR aging agent doesn't know strategic status — future: read from customers table
         dunning_stage: dunningStage,
         anthropic_api_key,
       });

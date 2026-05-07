@@ -23,8 +23,9 @@ export interface DunningLetterInput {
   on_time_rate?: number;        // 0–1
   avg_days_early_late?: number; // negative = pays early on average
   relationship_months?: number;
-  is_preferred_customer?: boolean;
-  dunning_stage?: 1 | 2 | 3 | 4; // 1 = friendly reminder, 4 = final notice
+  is_strategic_account?: boolean;
+  payment_health?: "healthy" | "watch" | "at_risk" | "unknown";
+  dunning_stage?: 1 | 2 | 3 | 4 | 5 | 6; // 1 = friendly reminder, 6 = collections handoff
   anthropic_api_key?: string;
 }
 
@@ -39,6 +40,8 @@ const STAGE_TONE: Record<number, string> = {
   2: "firm but respectful — payment is overdue and needs attention",
   3: "urgent — a significant amount is at risk, escalation is possible",
   4: "final notice — payment must be received immediately to avoid escalation to collections",
+  5: "legal referral — payment must be received within 5 business days to avoid legal proceedings, tone is formal and firm, no negotiation language",
+  6: "collections handoff — account has been referred to external collections, tone is formal and factual, direct all future communication to collections agency",
 };
 
 export async function composeDunningLetter(
@@ -115,7 +118,7 @@ Customer context:
 - Company: ${input.company_name}${input.ticker ? ` (${input.ticker})` : ""}
 - Contact: ${input.contact_name ?? "Accounts Payable"}
 - Relationship length: ${relLength}
-- Preferred customer: ${input.is_preferred_customer ? "Yes (key account)" : "No"}
+- Strategic account: ${input.is_strategic_account ? "Yes (key account)" : "No"}
 - Payment terms: Net ${input.payment_terms_days ?? 30}
 
 AR aging:
@@ -128,6 +131,9 @@ AR aging:
 Payment history:
 - On-time payment rate: ${onTimeRate}
 - Average payment timing: ${avgDays}
+- Payment health: ${input.payment_health ?? "unknown"}
+
+Tone guidance based on payment health: If payment_health is at_risk, emphasise the urgency and deteriorating pattern. If watch, note the payment trend. If healthy, acknowledge their payment history while still requesting settlement.
 
 Write a dunning letter. Start with "Subject: [subject line]" then a blank line, then the letter body.
 Sign off as "Credit Management Team". Keep it under 200 words.`;
@@ -143,13 +149,20 @@ function buildTemplate(
   stage: number
 ): DunningLetterResult {
   const contact = input.contact_name ?? `${input.company_name} Accounts Payable`;
-  const subject = fallbackSubject(input.company_name, totalOverdue);
+
+  const subjectOverride: Record<number, string> = {
+    5: `URGENT: Legal Referral Notice — ${input.company_name} Outstanding Balance`,
+    6: `Collections Notice — ${input.company_name} Account Referred`,
+  };
+  const subject = subjectOverride[stage] ?? fallbackSubject(input.company_name, totalOverdue);
 
   const opener: Record<number, string> = {
     1: "This is a friendly reminder regarding your outstanding balance.",
     2: "We are following up on an overdue balance that requires your attention.",
     3: "This is an urgent notice regarding a significantly overdue balance on your account.",
     4: "This is a final notice. Immediate payment is required to avoid escalation to collections.",
+    5: "URGENT NOTICE: Your account has been escalated for legal referral. Payment in full must be received within 5 business days to avoid legal proceedings.",
+    6: "This account has been referred to our external collections agency. All future communications regarding this balance should be directed to the collections agency.",
   };
 
   const body = `Dear ${contact},

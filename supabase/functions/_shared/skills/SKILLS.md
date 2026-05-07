@@ -188,6 +188,43 @@ CIA will detect the delta automatically on the next briefing run.
 
 ---
 
+---
+
+## Generative Skills
+
+### `compose-dunning-letter.ts`
+**Purpose:** Composes personalised dunning letters via Claude Haiku. Tone calibrated by dunning stage, payment health, and strategic account status. Falls back to structured templates if API unavailable.
+**Called by:** AR aging agent
+**Inputs:** company_name, overdue bucket amounts, dunning_stage (1-6), on_time_rate, payment_health, is_strategic_account, anthropic_api_key
+
+**Dunning stages:**
+- Stage 1: Friendly reminder — preserve relationship
+- Stage 2: Firm but respectful — payment overdue
+- Stage 3: Urgent — significant amount at risk
+- Stage 4: Final notice — avoid collections
+- Stage 5: Legal referral — 5 business days to pay
+- Stage 6: Collections handoff — referred to external agency
+
+**Key design decisions:**
+- `payment_health` adjusts tone: at_risk = emphasise deteriorating pattern, watch = note trend, healthy = acknowledge history
+- Strategic accounts receive more relationship-sensitive language
+- Template fallback ensures delivery even without API key
+- Stages 5 and 6 have override subjects ("URGENT: Legal Referral Notice" / "Collections Notice") in template fallback
+
+**Outputs:** `subject`, `body`, `generated_by` (claude/template)
+**Tests:** covered by AR aging agent integration
+
+---
+
+### `compose-teams-alert.ts`
+**Purpose:** Formats internal credit risk alerts for Teams, email, or Slack. Pure formatting — no API calls. Used by all agents and CIA.
+**Called by:** AR aging agent, news monitor agent, SEC monitor agent, CIA agent
+**Note:** Output is passed to `deliver-message.ts` for actual delivery across configured channels (Teams, Slack, email).
+**Inputs:** alert_type, company_name, severity, headline, details, metric_label/value, recommended_action
+**Outputs:** `subject`, `body`
+
+---
+
 ## Removed Skills
 
 ### `calculate-altman-z.ts` (removed May 2026)

@@ -50,6 +50,8 @@ import { assessCompositeRisk } from "../_shared/skills/analytical/assess-composi
 import { calculateCreditLimitProposal } from "../_shared/skills/analytical/calculate-credit-limit-proposal.ts";
 import { aggregateCreditScores } from "../_shared/skills/analytical/aggregate-credit-scores.ts";
 import { detectRatingChange } from "../_shared/skills/analytical/detect-rating-change.ts";
+import { composeTeamsAlert } from "../_shared/skills/generative/compose-teams-alert.ts";
+import { deliverMessage, EmailProvider, TeamsProvider, SlackProvider, LogProvider } from "../_shared/skills/integration/deliver-message.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -912,6 +914,20 @@ Return ONLY valid JSON in this exact shape, no other text:
 
   // 6b. Credit limit decisioning — run assessCompositeRisk + calculateCreditLimitProposal
   //     for each customer with signals, write pending_actions for human approval.
+  //     Also composes and delivers a credit action alert to the credit team.
+
+  const creditTeamEmail = Deno.env.get("CREDIT_TEAM_EMAIL") ?? "credit-team@company.com";
+  const sendgridKey = Deno.env.get("SENDGRID_API_KEY") ?? "";
+  const teamsWebhook = Deno.env.get("TEAMS_WEBHOOK_URL") ?? "";
+  const slackWebhook = Deno.env.get("SLACK_WEBHOOK_URL") ?? "";
+
+  const deliveryProviders = [
+    ...(sendgridKey ? [new EmailProvider(sendgridKey)] : []),
+    ...(teamsWebhook ? [new TeamsProvider(teamsWebhook)] : []),
+    ...(slackWebhook ? [new SlackProvider(slackWebhook)] : []),
+    new LogProvider(),
+  ];
+
   const pendingActions = [];
 
   for (const [custId, custEvents] of Object.entries(groupedEvents)) {
@@ -972,6 +988,42 @@ Return ONLY valid JSON in this exact shape, no other text:
       source_event_ids: custEvents.map((e: any) => e.id),
       run_id: runId,
       is_demo: DEMO_MODE,
+    });
+
+    // Compose and deliver credit action alert to credit team
+    const alert = composeTeamsAlert({
+      alert_type: "credit_limit_action",
+      company_name: customer.name ?? custId,
+      ticker: customer.ticker ?? undefined,
+      severity: riskAssessment.severity === "critical" ? "critical" : "high",
+      headline: `Credit limit reduction proposed: $${customer.credit_limit.toLocaleString()} → $${proposal.proposed_limit.toLocaleString()}`,
+      details: riskAssessment.rationale,
+      metric_label: "Proposed reduction",
+      metric_value: `${proposal.reduction_pct}%`,
+      recommended_action: "Review and approve or reject in the Actions page.",
+    });
+
+    await deliverMessage({
+      channel: "email",
+      recipient: creditTeamEmail,
+      subject: alert.subject,
+      body: alert.body,
+    }, deliveryProviders);
+
+    // Insert to agent_messages for audit trail
+    await supabaseClient.from("agent_messages").insert({
+      agent_name: "cia-agent",
+      customer_id: custId,
+      channel: "email",
+      template_type: "credit_limit_action",
+      recipient_type: "credit_committee",
+      recipient_name: "Credit Risk Team",
+      recipient_email: creditTeamEmail,
+      subject: alert.subject,
+      body: alert.body,
+      status: "draft",
+      is_demo: DEMO_MODE,
+      run_id: runId,
     });
   }
 
