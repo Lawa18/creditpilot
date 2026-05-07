@@ -7,12 +7,15 @@
  * open/overdue invoices for each matched customer with the uploaded data.
  *
  * Request body: multipart/form-data
- *   file        — CSV file (required)
- *   column_map  — JSON string: { standard_field: csv_header } (optional)
- *   is_demo     — "true" | "false" (optional, defaults to false)
+ *   file              — CSV file (required)
+ *   column_map        — JSON string: { standard_field: csv_header } (optional)
+ *   is_demo           — "true" | "false" (optional, defaults to false)
+ *   as_of_date        — ISO date string for days_overdue calculation (optional, defaults to today)
+ *   customer_currency — expected currency code e.g. "USD" (optional, triggers currency mismatch warnings)
  *
  * Response:
- *   { inserted: number, skipped_rows: number, errors: [...], unmatched_customers: string[] }
+ *   { inserted: number, skipped_rows: number, errors: [...], unmatched_customers: string[],
+ *     validation_warnings: [...], currency_warnings: [...] }
  *
  * Tables read:   customers
  * Tables written: invoices
@@ -49,9 +52,11 @@ Deno.serve(async (req) => {
     const columnMap = columnMapRaw ? JSON.parse(columnMapRaw) : undefined;
 
     const isDemo = formData.get("is_demo") === "true";
+    const as_of_date = (formData.get("as_of_date") as string | null) ?? undefined;
+    const customer_currency = (formData.get("customer_currency") as string | null) ?? undefined;
 
     const csvText = await file.text();
-    const parseResult = parseARCsv(csvText, columnMap);
+    const parseResult = parseARCsv(csvText, columnMap, as_of_date, customer_currency);
 
     if (parseResult.unmapped_columns.length > 0) {
       return new Response(
@@ -154,10 +159,12 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         inserted,
-        skipped_rows:        parseResult.errors.length,
-        errors:              parseResult.errors,
-        unmatched_customers: unmatchedCustomers,
-        column_map:          parseResult.column_map,
+        skipped_rows:         parseResult.errors.length,
+        errors:               parseResult.errors,
+        unmatched_customers:  unmatchedCustomers,
+        column_map:           parseResult.column_map,
+        validation_warnings:  parseResult.validation_warnings,
+        currency_warnings:    parseResult.currency_warnings,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

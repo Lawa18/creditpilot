@@ -19,6 +19,8 @@ interface UploadResult {
   errors: { row: number; message: string }[];
   unmatched_customers: string[];
   column_map: Record<string, string>;
+  validation_warnings: { row: number; field: string; message: string }[];
+  currency_warnings: { row: number; invoice_number: string; invoice_currency: string; expected_currency: string }[];
 }
 
 interface MappingState {
@@ -30,6 +32,7 @@ interface MappingState {
 const REQUIRED_FIELDS = [
   { key: "invoice_number",    label: "Invoice Number" },
   { key: "customer_name",     label: "Customer Name" },
+  { key: "invoice_date",      label: "Invoice Date" },
   { key: "due_date",          label: "Due Date" },
   { key: "outstanding_amount", label: "Outstanding Amount" },
 ];
@@ -48,6 +51,7 @@ export default function ArAging() {
   const [manualMap, setManualMap] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
+  const [reportDate, setReportDate] = useState(() => new Date().toISOString().split("T")[0]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -114,6 +118,7 @@ export default function ArAging() {
       form.append("file", uploadFile);
       if (resolvedMap) form.append("column_map", JSON.stringify(resolvedMap));
       form.append("is_demo", String(DEMO_MODE));
+      form.append("as_of_date", reportDate);
 
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(
@@ -166,6 +171,7 @@ export default function ArAging() {
     setMappingState(null);
     setManualMap({});
     setUploadResult(null);
+    setReportDate(new Date().toISOString().split("T")[0]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -324,6 +330,16 @@ export default function ArAging() {
                     onChange={handleFileChange}
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-foreground">Report date</label>
+                  <input
+                    type="date"
+                    value={reportDate}
+                    onChange={(e) => setReportDate(e.target.value)}
+                    className="w-full h-8 rounded-md border border-input bg-background px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                  />
+                  <p className="text-[10px] text-muted-foreground">Used to calculate days overdue. Defaults to today.</p>
+                </div>
                 <p className="text-[10px] text-muted-foreground">
                   Accepted columns: Invoice Number, Customer Name, Invoice Date, Due Date,
                   Amount, Outstanding, Currency, Days Overdue — and common aliases.
@@ -414,6 +430,32 @@ export default function ArAging() {
                     ))}
                     {uploadResult.errors.length > 10 && (
                       <p className="text-[10px] text-muted-foreground">…and {uploadResult.errors.length - 10} more</p>
+                    )}
+                  </div>
+                )}
+                {(uploadResult.validation_warnings ?? []).length > 0 && (
+                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+                    <p className="text-xs font-medium text-yellow-600 dark:text-yellow-400 mb-1">
+                      {uploadResult.validation_warnings.length} row{uploadResult.validation_warnings.length !== 1 ? "s" : ""} with warnings — review before approving
+                    </p>
+                    {uploadResult.validation_warnings.slice(0, 5).map((w, i) => (
+                      <p key={i} className="text-[10px] text-muted-foreground">Row {w.row} ({w.field}): {w.message}</p>
+                    ))}
+                    {uploadResult.validation_warnings.length > 5 && (
+                      <p className="text-[10px] text-muted-foreground">…and {uploadResult.validation_warnings.length - 5} more</p>
+                    )}
+                  </div>
+                )}
+                {(uploadResult.currency_warnings ?? []).length > 0 && (
+                  <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
+                    <p className="text-xs font-medium text-orange-600 dark:text-orange-400 mb-1">
+                      {uploadResult.currency_warnings.length} invoice{uploadResult.currency_warnings.length !== 1 ? "s" : ""} with currency mismatch — verify credit limit currency
+                    </p>
+                    {uploadResult.currency_warnings.slice(0, 5).map((w, i) => (
+                      <p key={i} className="text-[10px] text-muted-foreground">{w.invoice_number}: {w.invoice_currency} (expected {w.expected_currency})</p>
+                    ))}
+                    {uploadResult.currency_warnings.length > 5 && (
+                      <p className="text-[10px] text-muted-foreground">…and {uploadResult.currency_warnings.length - 5} more</p>
                     )}
                   </div>
                 )}

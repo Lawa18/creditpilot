@@ -26,11 +26,13 @@ export interface ParsedInvoice {
 }
 
 export interface ParseResult {
-  invoices:          ParsedInvoice[];
-  errors:            { row: number; message: string }[];
-  unmapped_columns:  string[];           // required columns that couldn't be auto-mapped
-  column_map:        Record<string, string>; // final mapping: { standard_field: csv_header }
-  available_columns: string[];           // all headers found in the CSV
+  invoices:             ParsedInvoice[];
+  errors:               { row: number; message: string }[];
+  unmapped_columns:     string[];           // required columns that couldn't be auto-mapped
+  column_map:           Record<string, string>; // final mapping: { standard_field: csv_header }
+  available_columns:    string[];           // all headers found in the CSV
+  validation_warnings:  { row: number; field: string; message: string }[];
+  currency_warnings:    { row: number; invoice_number: string; invoice_currency: string; expected_currency: string }[];
 }
 
 // ─── Column alias map ─────────────────────────────────────────────────────────
@@ -46,7 +48,7 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   days_overdue:       ["days overdue", "dpd", "days past due", "overdue days", "days_overdue"],
 };
 
-const REQUIRED_FIELDS = ["invoice_number", "customer_name", "due_date", "outstanding_amount"];
+const REQUIRED_FIELDS = ["invoice_number", "customer_name", "invoice_date", "due_date", "outstanding_amount"];
 
 // ─── CSV parsing ──────────────────────────────────────────────────────────────
 
@@ -141,11 +143,16 @@ export function parseAmount(val: string): number | null {
 
 // ─── Days overdue ─────────────────────────────────────────────────────────────
 
-function calcDaysOverdue(dueDate: string): number {
-  const due = new Date(dueDate);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return Math.max(0, Math.floor((today.getTime() - due.getTime()) / 86_400_000));
+function calcDaysOverdue(dueDate: string, referenceDate?: Date): number {
+  // Use UTC throughout to avoid timezone-dependent day shifts
+  const dueMs = Date.UTC(
+    parseInt(dueDate.slice(0, 4)),
+    parseInt(dueDate.slice(5, 7)) - 1,
+    parseInt(dueDate.slice(8, 10))
+  );
+  const ref = referenceDate ?? new Date();
+  const refMs = Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate());
+  return Math.max(0, Math.floor((refMs - dueMs) / 86_400_000));
 }
 
 // ─── Column auto-mapping ──────────────────────────────────────────────────────
@@ -172,7 +179,9 @@ export function autoMapColumns(headers: string[]): Record<string, string> {
 
 export function parseARCsv(
   csvText: string,
-  columnMap?: Record<string, string>
+  columnMap?: Record<string, string>,
+  as_of_date?: string,
+  customer_currency?: string
 ): ParseResult {
   try {
     const { rows } = parseCSVText(csvText);
@@ -184,6 +193,8 @@ export function parseARCsv(
         unmapped_columns: REQUIRED_FIELDS.slice(),
         column_map: {},
         available_columns: [],
+        validation_warnings: [],
+        currency_warnings: [],
       };
     }
 
@@ -191,8 +202,12 @@ export function parseARCsv(
     const resolvedMap = columnMap ?? autoMapColumns(headers);
     const unmapped_columns = REQUIRED_FIELDS.filter((f) => !resolvedMap[f]);
 
+    const referenceDate = as_of_date ? new Date(as_of_date) : undefined;
+
     const invoices: ParsedInvoice[] = [];
     const errors: { row: number; message: string }[] = [];
+    const validation_warnings: ParseResult["validation_warnings"] = [];
+    const currency_warnings: ParseResult["currency_warnings"] = [];
 
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
@@ -220,8 +235,19 @@ export function parseARCsv(
         continue;
       }
 
-      const invoiceDateRaw = get("invoice_date");
-      const invoiceDate = invoiceDateRaw ? (parseDate(invoiceDateRaw) ?? dueDate) : dueDate;
+      // invoice_date required when column is mapped; falls back to due_date when column absent
+      let invoiceDate: string;
+      if (resolvedMap["invoice_date"]) {
+        const invoiceDateRaw = get("invoice_date");
+        const parsed = parseDate(invoiceDateRaw);
+        if (!parsed) {
+          errors.push({ row: i + 1, message: `Invalid or missing invoice_date: "${invoiceDateRaw}"` });
+          continue;
+        }
+        invoiceDate = parsed;
+      } else {
+        invoiceDate = dueDate;
+      }
 
       const outstandingRaw = get("outstanding_amount");
       const outstanding = parseAmount(outstandingRaw);
@@ -235,7 +261,33 @@ export function parseARCsv(
 
       const daysOverdueRaw = get("days_overdue");
       const parsedDpd = daysOverdueRaw ? parseInt(daysOverdueRaw, 10) : NaN;
-      const days_overdue = isNaN(parsedDpd) ? calcDaysOverdue(dueDate) : parsedDpd;
+      const days_overdue = isNaN(parsedDpd) ? calcDaysOverdue(dueDate, referenceDate) : parsedDpd;
+
+      const currency = get("currency") || "USD";
+
+      // Validation warnings — row is included, not skipped
+      if (amount > 0 && outstanding > amount) {
+        validation_warnings.push({ row: i + 1, field: "outstanding_amount", message: "Outstanding amount exceeds invoice amount" });
+      }
+      if (days_overdue > 365) {
+        validation_warnings.push({ row: i + 1, field: "days_overdue", message: "Invoice overdue more than 365 days — verify as_of_date" });
+      }
+      if (amount <= 0) {
+        validation_warnings.push({ row: i + 1, field: "amount", message: "Invoice amount is zero or negative" });
+      }
+      if (outstanding < 0) {
+        validation_warnings.push({ row: i + 1, field: "outstanding_amount", message: "Outstanding amount is negative" });
+      }
+
+      // Currency mismatch detection
+      if (customer_currency && currency && currency !== customer_currency) {
+        currency_warnings.push({
+          row: i + 1,
+          invoice_number: invoiceNumber,
+          invoice_currency: currency,
+          expected_currency: customer_currency,
+        });
+      }
 
       invoices.push({
         invoice_number:    invoiceNumber,
@@ -244,12 +296,12 @@ export function parseARCsv(
         due_date:          dueDate,
         amount,
         outstanding_amount: outstanding,
-        currency:          get("currency") || "USD",
+        currency,
         days_overdue:      Math.max(0, days_overdue),
       });
     }
 
-    return { invoices, errors, unmapped_columns, column_map: resolvedMap, available_columns: headers };
+    return { invoices, errors, unmapped_columns, column_map: resolvedMap, available_columns: headers, validation_warnings, currency_warnings };
   } catch (err) {
     return {
       invoices: [],
@@ -257,6 +309,8 @@ export function parseARCsv(
       unmapped_columns: [],
       column_map: {},
       available_columns: [],
+      validation_warnings: [],
+      currency_warnings: [],
     };
   }
 }

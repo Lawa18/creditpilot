@@ -204,4 +204,60 @@ describe("parseARCsv", () => {
     const result = parseARCsv(csv);
     expect(result.invoices[0].currency).toBe("USD");
   });
+
+  // ── invoice_date required when column is mapped ───────────────────────────
+
+  it("invoice_date column present but row value empty → row error, row skipped", () => {
+    const csv = [
+      "invoice_number,customer_name,invoice_date,due_date,outstanding_amount",
+      "INV-001,Acme Corp,,2025-02-01,5000",
+    ].join("\n");
+    const result = parseARCsv(csv);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].message).toMatch(/invoice_date/);
+    expect(result.invoices).toHaveLength(0);
+  });
+
+  // ── as_of_date parameter ─────────────────────────────────────────────────
+
+  it("as_of_date overrides today for days_overdue calculation", () => {
+    const csv = [
+      "invoice_number,customer_name,invoice_date,due_date,outstanding_amount",
+      "INV-001,Acme Corp,2024-11-01,2024-12-01,5000",
+    ].join("\n");
+    // as_of_date = 2025-01-01, due_date = 2024-12-01 → 31 days overdue
+    const result = parseARCsv(csv, undefined, "2025-01-01");
+    expect(result.errors).toHaveLength(0);
+    expect(result.invoices[0].days_overdue).toBe(31);
+  });
+
+  // ── validation_warnings ───────────────────────────────────────────────────
+
+  it("outstanding_amount > amount → validation warning, row still included", () => {
+    const csv = [
+      "invoice_number,customer_name,invoice_date,due_date,amount,outstanding_amount",
+      "INV-001,Acme Corp,2025-01-01,2025-02-01,1000,1500",
+    ].join("\n");
+    // Pin as_of_date so days_overdue is deterministic and < 365 (no extra warning)
+    const result = parseARCsv(csv, undefined, "2025-03-01");
+    expect(result.invoices).toHaveLength(1);
+    expect(result.validation_warnings).toHaveLength(1);
+    expect(result.validation_warnings[0].field).toBe("outstanding_amount");
+    expect(result.validation_warnings[0].message).toMatch(/exceeds/);
+  });
+
+  // ── currency_warnings ─────────────────────────────────────────────────────
+
+  it("EUR invoice with USD customer_currency → currency warning generated", () => {
+    const csv = [
+      "invoice_number,customer_name,invoice_date,due_date,outstanding_amount,currency",
+      "INV-001,Acme Corp,2025-01-01,2025-02-01,5000,EUR",
+    ].join("\n");
+    const result = parseARCsv(csv, undefined, undefined, "USD");
+    expect(result.invoices).toHaveLength(1);
+    expect(result.currency_warnings).toHaveLength(1);
+    expect(result.currency_warnings[0].invoice_number).toBe("INV-001");
+    expect(result.currency_warnings[0].invoice_currency).toBe("EUR");
+    expect(result.currency_warnings[0].expected_currency).toBe("USD");
+  });
 });
