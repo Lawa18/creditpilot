@@ -461,7 +461,6 @@ async function fetchRelevantData(
       let q = supabase
         .from("invoices")
         .select("id, invoice_number, customer_id, invoice_date, due_date, invoice_amount, outstanding_amount, status, days_overdue")
-        .eq("is_demo", demoMode)
         .order("due_date", { ascending: true })
         .limit(20);
 
