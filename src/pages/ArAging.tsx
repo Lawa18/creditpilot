@@ -77,7 +77,7 @@ export default function ArAging() {
     queryFn: async () => {
       const { data } = await supabase
         .from("pending_actions")
-        .select("*, customers!inner(company_name, ticker)")
+        .select("*, customers!inner(company_name)")
         .eq("agent_name", "ar_aging_agent")
         .eq("status", "pending")
         .eq("is_demo", true)
@@ -256,7 +256,6 @@ export default function ArAging() {
                       <tr key={c.id} className="hover:bg-secondary/30">
                         <td className="p-3">
                           <span className="font-medium text-foreground">{c.company_name}</span>
-                          <span className="text-muted-foreground ml-1.5 text-[10px]">{c.ticker}</span>
                         </td>
                         <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
                         <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.current_amount)}</td>

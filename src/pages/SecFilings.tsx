@@ -11,7 +11,7 @@ export default function SecFilings() {
     queryFn: async () => {
       const { data } = await supabase
         .from("sec_monitoring")
-        .select("*, customers!inner(company_name, ticker)")
+        .select("*, customers!inner(company_name)")
         .eq("is_demo", true)
         .order("alert_triggered", { ascending: false });
       return data ?? [];
@@ -70,7 +70,7 @@ export default function SecFilings() {
 
       <div className="space-y-4">
         {(monitoring ?? []).map((d: any) => {
-          const customer = d.customers as { company_name: string; ticker: string | null };
+          const customer = d.customers as { company_name: string };
           const customerEvents = eventsByCustomer[d.customer_id];
           const events = customerEvents?.types ?? [];
           const secUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=10-K&dateb=&owner=include&count=10`;
@@ -81,8 +81,7 @@ export default function SecFilings() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-semibold text-foreground">
-                      {customer.company_name}{" "}
-                      <span className="text-muted-foreground font-normal">{customer.ticker}</span>
+                      {customer.company_name}
                     </p>
                     <p className="text-[10px] font-mono text-muted-foreground mt-0.5">CIK: {d.cik}</p>
                   </div>

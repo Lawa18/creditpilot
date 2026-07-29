@@ -37,7 +37,7 @@ export default function Actions() {
     queryFn: async () => {
       const { data } = await supabase
         .from("pending_actions")
-        .select("*, customers(company_name, ticker, credit_limit)")
+        .select("*, customers(company_name, credit_limit)")
         .eq("status", "pending")
         .eq("is_demo", true)
         .order("created_at", { ascending: false });
@@ -52,7 +52,7 @@ export default function Actions() {
     queryFn: async () => {
       const { data } = await supabase
         .from("pending_actions")
-        .select("*, customers(company_name, ticker)")
+        .select("*, customers(company_name)")
         .eq("is_demo", true)
         .in("status", ["approved", "rejected"])
         .order("reviewed_at", { ascending: false });
@@ -199,10 +199,7 @@ export default function Actions() {
                     <AgentPill agentName={action.agent_name} />
                   </div>
                   <p className="text-sm font-semibold text-foreground">
-                    {cust?.company_name}{" "}
-                    {cust?.ticker && (
-                      <span className="text-muted-foreground font-normal">({cust.ticker})</span>
-                    )}
+                    {cust?.company_name}
                   </p>
                   <p className="text-foreground">
                     Action:{" "}
@@ -329,9 +326,6 @@ export default function Actions() {
                     <tr key={action.id} className="hover:bg-secondary/30 transition-colors">
                       <td className="p-3">
                         <span className="font-medium text-xs">{cust?.company_name ?? "—"}</span>
-                        {cust?.ticker && (
-                          <span className="text-muted-foreground text-[10px] ml-1.5">{cust.ticker}</span>
-                        )}
                       </td>
                       <td className="p-3 text-xs capitalize text-muted-foreground">
                         {action.action_type?.replace(/_/g, " ").toLowerCase()}

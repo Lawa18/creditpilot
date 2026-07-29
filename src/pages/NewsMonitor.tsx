@@ -17,7 +17,7 @@ export default function NewsMonitor() {
     queryFn: async () => {
       const { data } = await supabase
         .from("negative_news")
-        .select("*, customers!inner(company_name, ticker)")
+        .select("*, customers!inner(company_name)")
         .eq("is_demo", true)
         .order("news_date", { ascending: false });
       return data ?? [];
@@ -75,9 +75,7 @@ export default function NewsMonitor() {
                         <span className="text-[10px] text-severity-critical font-mono">{n.sentiment_score.toFixed(2)}</span>
                       )}
                     </div>
-                    <p className="text-sm font-semibold text-foreground">{(n.customers as any).company_name}
-                      <span className="text-muted-foreground font-normal ml-1.5 text-xs">{(n.customers as any).ticker}</span>
-                    </p>
+                    <p className="text-sm font-semibold text-foreground">{(n.customers as any).company_name}</p>
                     <p className="text-sm font-medium text-foreground mt-0.5">{n.headline}</p>
                     <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{n.summary}</p>
                     {n.category && <Badge variant="secondary" className="mt-2 text-[10px]">{n.category}</Badge>}

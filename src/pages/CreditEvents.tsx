@@ -40,7 +40,7 @@ export default function CreditEvents() {
     queryFn: async () => {
       let query = supabase
         .from("credit_events")
-        .select("*, customers(company_name, ticker)")
+        .select("*, customers(company_name)")
         .eq("is_demo", true)
         .order("created_at", { ascending: false })
         .limit(100);
@@ -115,9 +115,6 @@ export default function CreditEvents() {
                   </div>
                   <p className="text-sm">
                     <span className="font-semibold text-foreground">{evt.customers?.company_name ?? "—"}</span>
-                    {evt.customers?.ticker && (
-                      <span className="text-muted-foreground ml-1.5 text-xs">{evt.customers.ticker}</span>
-                    )}
                   </p>
                   {evt.title && (
                     <p className="text-sm font-medium text-foreground mt-0.5">{evt.title}</p>

@@ -100,7 +100,6 @@ export default function Customers() {
                   <tr key={c.id} className="hover:bg-secondary/30 cursor-pointer" onClick={() => setSelectedId(c.id)}>
                     <td className="p-3">
                       <span className="font-medium">{c.company_name}</span>
-                      <span className="text-muted-foreground ml-1.5">{c.ticker}</span>
                     </td>
                     <td className="p-3"><ScenarioBadge scenario={c.scenario} /></td>
                     <td className="p-3 text-right">{formatCurrency(c.credit_limit)}</td>
@@ -194,8 +193,7 @@ function CustomerDetail({ customer }: { customer: any }) {
     <div>
       <SheetHeader>
         <SheetTitle className="text-foreground">
-          {customer.company_name}{" "}
-          <span className="text-muted-foreground font-normal">{customer.ticker}</span>
+          {customer.company_name}
         </SheetTitle>
       </SheetHeader>
       <div className="mt-2 mb-4"><ScenarioBadge scenario={customer.scenario} /></div>
