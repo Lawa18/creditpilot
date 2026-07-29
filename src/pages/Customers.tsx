@@ -89,7 +89,6 @@ export default function Customers() {
                 <th className="text-right p-3 font-medium">Exposure</th>
                 <th className="text-right p-3 font-medium">Util%</th>
                 <th className="text-right p-3 font-medium">Credit Score</th>
-                <th className="text-left p-3 font-medium">Flags</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -107,14 +106,6 @@ export default function Customers() {
                     <td className="p-3 text-right">{util.toFixed(1)}%</td>
                     <td className={cn("p-3 text-right font-medium", scoreColor(score))}>
                       {score != null ? score : <span className="text-muted-foreground font-normal">NR</span>}
-                    </td>
-                    <td className="p-3">
-                      <div className="flex gap-1 flex-wrap max-w-[200px]">
-                        {(c.flags ?? []).slice(0, 3).map((f: string) => (
-                          <Badge key={f} variant="secondary" className="text-[9px]">{f.replace(/_/g, " ")}</Badge>
-                        ))}
-                        {(c.flags?.length ?? 0) > 3 && <Badge variant="secondary" className="text-[9px]">+{c.flags.length - 3}</Badge>}
-                      </div>
                     </td>
                   </tr>
                 );
@@ -187,7 +178,6 @@ function CustomerDetail({ customer }: { customer: any }) {
   const util = customer.credit_limit > 0 ? (customer.current_exposure / customer.credit_limit) * 100 : 0;
   const score = customer.credit_rating_score as number | null;
   const riskTags: string[] = customer.risk_tags ?? [];
-  const manualFlags: string[] = customer.flags ?? [];
 
   return (
     <div>
@@ -285,19 +275,6 @@ function CustomerDetail({ customer }: { customer: any }) {
             )}
           </div>
 
-          {/* Manual Tags */}
-          {manualFlags.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">Manual Tags</p>
-              <div className="flex gap-1.5 flex-wrap">
-                {manualFlags.map((f: string) => (
-                  <Badge key={f} variant="outline" className="text-[10px]">{f.replace(/_/g, " ")}</Badge>
-                ))}
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-1">Set by credit manager</p>
-            </div>
-          )}
-
           {customer.notes && <p className="text-xs text-muted-foreground">{customer.notes}</p>}
           <div className="text-xs text-muted-foreground space-y-1">
             <p>Account Manager: <span className="text-foreground">{customer.account_manager}</span></p>
@@ -316,7 +293,7 @@ function CustomerDetail({ customer }: { customer: any }) {
                     <Badge variant={inv.status === "paid" ? "secondary" : inv.status === "overdue" ? "destructive" : "outline"} className="text-[10px]">{inv.status}</Badge>
                   </div>
                   <div className="flex justify-between mt-1.5 text-muted-foreground">
-                    <span>Amount: {formatCurrency(inv.invoice_amount)} · Paid: {formatCurrency(inv.paid_amount)} · Out: {formatCurrency(inv.outstanding_amount)}</span>
+                    <span>Amount: {formatCurrency(inv.invoice_amount)} · Paid: {formatCurrency(inv.amount_paid)} · Out: {formatCurrency(inv.outstanding_amount)}</span>
                   </div>
                   <div className="flex justify-between mt-1">
                     <span className="text-muted-foreground">Due: {inv.due_date}</span>

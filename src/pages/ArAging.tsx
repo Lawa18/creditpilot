@@ -248,7 +248,6 @@ export default function ArAging() {
                       <th className="text-right p-3 font-medium whitespace-nowrap">90+</th>
                       <th className="text-right p-3 font-medium whitespace-nowrap">Total AR</th>
                       <th className="text-right p-3 font-medium whitespace-nowrap">Util%</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">DSO</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -265,7 +264,6 @@ export default function ArAging() {
                         <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_over_90)}</td>
                         <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_outstanding)}</td>
                         <td className="p-3 text-right font-mono tabular-nums">{formatPct(c.utilization_pct)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{c.dso_days ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
