@@ -8,8 +8,9 @@ Preserved for potential future use — do not reference in new code without a pl
 |-------|---------|--------|-------|
 | bankruptcy_details | Feb 2026 | Seed-only — read by frontend via `v_bankruptcy_claims`; no agent reads or writes | 4 rows. Contains detailed bankruptcy tracking (chapter, status, claim amounts, recovery estimates). Frontend reads via `v_bankruptcy_claims` which joins to `invoices.claimable`. No agent writer — do not build agent logic that assumes these rows are maintained. See `docs/DEMO_DATA_CONTRACT.md`. |
 | growth_signals | Feb 2026 | Seed-only — read by frontend via `v_growth_opportunities`; no agent reads or writes | 5 rows. Contains credit-limit-increase recommendations and growth trajectory data. Frontend reads via `v_growth_opportunities`. No agent writer (`agent_name` is NULL for all rows). See `docs/DEMO_DATA_CONTRACT.md`. |
-| credit_actions | Feb 2026 | Unused | Superseded by pending_actions + credit_events |
 | credit_metrics | Feb 2026 | Fully orphaned | Altman Z removed from decisions and UI (Apr 27 2026). No agent writes to it, no frontend reads it. Contains: credit_score, altman_z_score, d_and_b_rating, current_ratio. credit_rating_score on customers table is the authoritative score. calculate-altman-z.ts skill also removed (May 2026) — requires financial statement inputs not available via API. credit_metrics table remains orphaned. |
+| agent_processed_events | May 2026 | Fully orphaned | Built for idempotency guarantees per the V1 taxonomy work, but no agent currently reads or writes it -- agents use their own per-table dedup instead (content_fingerprint on negative_news, accession_number on sec_filings, no dedup needed for invoices since AR's data source is internal). 0 rows. |
+| credit_metric_changes | Feb 2026 | Fully orphaned | Paired with credit_metrics (see above) -- no agent writes to it, no frontend reads it. 0 rows. |
 
 ---
 
