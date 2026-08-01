@@ -111,12 +111,6 @@ export async function initDemo() {
     await supabase.from("customers").update({ credit_limit: limit }).eq("id", id);
   }
 
-  // sec_monitoring — reset alert state (rows always exist from migrations, RLS blocks delete)
-  await supabase
-    .from("sec_monitoring")
-    .update({ alert_triggered: true })
-    .eq("is_demo", true);
-
   // negative_news — reset reviewed state (rows always exist from migrations, RLS blocks delete)
   await supabase
     .from("negative_news")
