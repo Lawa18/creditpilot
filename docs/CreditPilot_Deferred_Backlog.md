@@ -613,3 +613,13 @@ Fixed: removed ticker from all embedded selects and all display JSX across Actio
 **Full frontend query sweep completed after these fixes** -- every .select() call across all 6+ pages checked column-by-column against the live schema (customers, invoices, credit_events, pending_actions, sec_monitoring). No further stale-column references found.
 
 **Process gap to close:** the G1 lesson (backlog, three-check rule for column drops: code + views + function bodies) needs a fourth check added -- frontend (src/) queries, both embedded PostgREST selects and direct field access in JSX. This was the actual root cause of the biggest bug found this entire pre-audit pass. Update the G1 note itself to reflect this.
+
+---
+
+## Frontend days_overdue staleness — final instance fixed (2026-07-30)
+
+Found during a pre-audit "what's left" review: Customers.tsx's per-invoice detail view (Invoices tab) still read the stale stored invoices.days_overdue column directly for both its color-coding and its "Xd overdue" display text -- the same staleness bug already fixed this session in ar-aging-agent's OVERDUE_AR emission and cia-agent's invoice fetch, but missed in the earlier full frontend sweep since this specific display wasn't caught by the grep patterns used at the time (it read inv.days_overdue as a property access, not as part of a query select string).
+
+Fixed: computes days-overdue live from due_date (paid/written_off invoices correctly excluded from aging math, matching the same convention used elsewhere). Build verified clean. Commit 6c5a940.
+
+This closes out the last known instance of this specific bug class across the codebase (backend agents + all frontend consumers now verified to compute live rather than trust the stored column).
