@@ -623,3 +623,13 @@ Found during a pre-audit "what's left" review: Customers.tsx's per-invoice detai
 Fixed: computes days-overdue live from due_date (paid/written_off invoices correctly excluded from aging math, matching the same convention used elsewhere). Build verified clean. Commit 6c5a940.
 
 This closes out the last known instance of this specific bug class across the codebase (backend agents + all frontend consumers now verified to compute live rather than trust the stored column).
+
+---
+
+## Invoice status badge staleness — found via user review, fixed (2026-07-31)
+
+Found while reviewing the just-deployed days_overdue live-fix on the Customers page: two invoices displayed a visible contradiction -- a "current" status badge sitting directly next to "19d overdue" text on the same card. Root cause: the previous fix made days_overdue compute live from due_date, but the status badge still read the stored invoices.status column directly -- the same staleness bug, just on a sibling field, and the mismatch between a now-live field and a still-stale field made the inconsistency visible for the first time (previously both were consistently wrong together).
+
+Fixed: added liveStatus, computed the same way as liveDaysOverdue -- overrides only between "current" and "overdue" based on the live date; any other status (paid, written_off, disputed, pre_petition) passes through untouched since those aren't date-driven states. Matches the documented status-derivation rule in the Input Contract doc. Build verified clean. Commit 466ed93.
+
+**Also noted, not yet investigated:** the Activity tab on this same customer detail view shows a "DUNNING LETTER STAGE 1" entry attributed to ar_aging_agent, dated Mar 3. Confirmed elsewhere this session that dunning letter composition is NOT currently wired into ar-aging-agent (zero code references) -- this is almost certainly old seed/demo activity data from before that wiring was removed, not a live capability. Low priority (doesn't affect correctness of current data, just could mislead someone into thinking dunning letters are actively sent today) -- worth a quick look whenever the dunning feature work is picked back up, to confirm this seed row is clearly historical/demo-narrative and not accidentally implying current behavior.
