@@ -291,12 +291,15 @@ function CustomerDetail({ customer }: { customer: any }) {
               const liveDaysOverdue = inv.status === "paid" || inv.status === "written_off"
                 ? 0
                 : Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86400000));
+              const liveStatus = (inv.status === "current" || inv.status === "overdue")
+                ? (liveDaysOverdue > 0 ? "overdue" : "current")
+                : inv.status;
               const daysColor = liveDaysOverdue === 0 ? "text-risk-current" : liveDaysOverdue <= 30 ? "text-risk-low" : liveDaysOverdue <= 60 ? "text-severity-high" : liveDaysOverdue <= 90 ? "text-severity-critical" : "text-aging-over-90";
               return (
                 <div key={inv.id} className="bg-secondary/30 rounded-lg p-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="font-medium">{inv.invoice_number}</span>
-                    <Badge variant={inv.status === "paid" ? "secondary" : inv.status === "overdue" ? "destructive" : "outline"} className="text-[10px]">{inv.status}</Badge>
+                    <Badge variant={liveStatus === "paid" ? "secondary" : liveStatus === "overdue" ? "destructive" : "outline"} className="text-[10px]">{liveStatus}</Badge>
                   </div>
                   <div className="flex justify-between mt-1.5 text-muted-foreground">
                     <span>Amount: {formatCurrency(inv.invoice_amount)} · Paid: {formatCurrency(inv.amount_paid)} · Out: {formatCurrency(inv.outstanding_amount)}</span>
