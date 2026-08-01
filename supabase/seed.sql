@@ -1035,7 +1035,7 @@ INSERT INTO public.sec_filings VALUES ('f14667ce-7187-445e-83cb-44a93b587255', '
 
 INSERT INTO public.sec_monitoring VALUES ('763b9b25-af09-4f25-b001-8c2d92822eff', 'c0000001-0000-0000-0000-000000000049', '0001840292', true, '{10-K,10-Q,8-K}', '2024-03-28', '2025-01-12', NULL, '{going_concern_warning,cash_runway_<3_quarters}', true, '2026-06-12', 'Alert cleared by credit manager', '2025-04-15', '2026-02-27 03:20:52.107987+00', '2026-02-27 03:20:52.107987+00', '2026-06-12 02:03:15.021+00', true);
 INSERT INTO public.sec_monitoring VALUES ('f21af519-92f4-4ebe-afcd-d389486a2222', 'c0000001-0000-0000-0000-000000000021', '0001021162', true, '{10-K,10-Q,8-K}', '2024-06-15', '2025-01-28', NULL, '{covenant_waiver}', true, '2026-06-12', 'Alert cleared by credit manager', '2025-04-30', '2026-02-27 03:20:52.107987+00', '2026-02-27 03:20:52.107987+00', '2026-06-12 02:03:15.021+00', true);
-INSERT INTO public.sec_monitoring VALUES ('862ade98-cffe-4192-bf7a-e91b3938d93b', 'c0000001-0000-0000-0000-000000000048', '0000217346', true, '{10-K,10-Q,8-K}', '2025-02-15', '2024-11-08', NULL, '{}', true, NULL, NULL, '2025-05-15', '2026-02-27 03:20:52.107987+00', '2026-02-27 03:20:52.107987+00', '2026-06-12 02:03:15.021+00', true);
+INSERT INTO public.sec_monitoring VALUES ('862ade98-cffe-4192-bf7a-e91b3938d93b', 'c0000001-0000-0000-0000-000000000048', '0000217346', true, '{10-K,10-Q,8-K}', '2025-02-15', '2024-11-08', NULL, '{}', false, NULL, NULL, '2025-05-15', '2026-02-27 03:20:52.107987+00', '2026-02-27 03:20:52.107987+00', '2026-06-12 02:03:15.021+00', true);
 
 --
 -- sec_monitoring coverage expansion — add monitoring for all customers with a
