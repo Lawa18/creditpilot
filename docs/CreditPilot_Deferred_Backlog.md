@@ -633,3 +633,19 @@ Found while reviewing the just-deployed days_overdue live-fix on the Customers p
 Fixed: added liveStatus, computed the same way as liveDaysOverdue -- overrides only between "current" and "overdue" based on the live date; any other status (paid, written_off, disputed, pre_petition) passes through untouched since those aren't date-driven states. Matches the documented status-derivation rule in the Input Contract doc. Build verified clean. Commit 466ed93.
 
 **Also noted, not yet investigated:** the Activity tab on this same customer detail view shows a "DUNNING LETTER STAGE 1" entry attributed to ar_aging_agent, dated Mar 3. Confirmed elsewhere this session that dunning letter composition is NOT currently wired into ar-aging-agent (zero code references) -- this is almost certainly old seed/demo activity data from before that wiring was removed, not a live capability. Low priority (doesn't affect correctness of current data, just could mislead someone into thinking dunning letters are actively sent today) -- worth a quick look whenever the dunning feature work is picked back up, to confirm this seed row is clearly historical/demo-narrative and not accidentally implying current behavior.
+
+---
+
+## sec_monitoring alert_triggered bug — ACTUAL root cause found (2026-07-31)
+
+Earlier this session (Phase 1d), this same bug was found and data-corrected, but its root cause was explicitly flagged as unresolved. It recurred today -- confirmed via a live screenshot showing all 47 monitored customers with "Alert Active" -- proving it was a real, reproducible code bug, not a one-time manual mistake.
+
+**Real root cause found:** src/lib/initDemo.ts contained an unconditional `UPDATE sec_monitoring SET alert_triggered = true WHERE is_demo = true`, run on every demo init (page load / Reset Demo click). This was written when sec_monitoring only had 3 monitored customers (Heliogen, Triumph, Textron) -- forcing "alert active" made sense then as a demo-repeatability mechanism. It was never revisited when sec_monitoring was expanded to 47 customers earlier this session (the coverage-expansion work), so it silently corrupted every one of the 44 newly-added customers' alert state on every single page load from that point on -- explaining why the manual data fix from Phase 1d didn't hold.
+
+Fixed: removed the blanket update entirely (commit 1db03aa). Safe to remove -- Heliogen and Triumph's genuine alert_triggered=true is baked directly into seed.sql, not dependent on this runtime reset. Also fixed a related pre-existing inconsistency found while investigating: Textron's own seed.sql row had alert_triggered=true despite empty risk_signals and no alert_date (same inconsistent-alert pattern) -- corrected directly in seed data (commit dad24b4) so a fresh database load won't reintroduce it. Live bad data re-corrected via the same UPDATE query as the original Phase 1d fix. Harness 8/8.
+
+**Lesson:** when expanding a table's scope (3 -> 47 monitored customers), grep for every write path touching that table, not just the ones in the agent that reads/processes it -- this bug lived in a completely different file (initDemo.ts) with no obvious connection to the sec-monitor-agent code that was actually audited during the coverage-expansion work.
+
+## Misleading SEC Filings sidebar badge — removed (2026-07-31)
+
+Found while investigating the above: the "2" badge next to SEC Filings in the sidebar was not a real notification count. It counted sec_filings WHERE reviewed=false -- reviewed is part of a hand-review workflow that was never built (already documented elsewhere in this backlog as unused workflow cruft), so the badge always showed the total demo filing count, not genuinely unread items. Removed entirely (commit ae665cf), along with a related fully-dead "news" badge count that was computed but never displayed anywhere (News Monitor never had a badgeKey to show it).
