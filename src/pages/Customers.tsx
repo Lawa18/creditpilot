@@ -285,7 +285,13 @@ function CustomerDetail({ customer }: { customer: any }) {
         <TabsContent value="invoices" className="mt-4">
           <div className="space-y-2">
             {(invoices ?? []).map((inv: any) => {
-              const daysColor = inv.days_overdue === 0 ? "text-risk-current" : inv.days_overdue <= 30 ? "text-risk-low" : inv.days_overdue <= 60 ? "text-severity-high" : inv.days_overdue <= 90 ? "text-severity-critical" : "text-aging-over-90";
+              const dueDate = new Date(inv.due_date + "T00:00:00");
+              const today = new Date();
+              today.setHours(0, 0, 0, 0);
+              const liveDaysOverdue = inv.status === "paid" || inv.status === "written_off"
+                ? 0
+                : Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86400000));
+              const daysColor = liveDaysOverdue === 0 ? "text-risk-current" : liveDaysOverdue <= 30 ? "text-risk-low" : liveDaysOverdue <= 60 ? "text-severity-high" : liveDaysOverdue <= 90 ? "text-severity-critical" : "text-aging-over-90";
               return (
                 <div key={inv.id} className="bg-secondary/30 rounded-lg p-3 text-xs">
                   <div className="flex justify-between items-center">
@@ -297,7 +303,7 @@ function CustomerDetail({ customer }: { customer: any }) {
                   </div>
                   <div className="flex justify-between mt-1">
                     <span className="text-muted-foreground">Due: {inv.due_date}</span>
-                    <span className={cn("font-medium", daysColor)}>{inv.days_overdue > 0 ? `${inv.days_overdue}d overdue` : "Current"}</span>
+                    <span className={cn("font-medium", daysColor)}>{liveDaysOverdue > 0 ? `${liveDaysOverdue}d overdue` : "Current"}</span>
                   </div>
                 </div>
               );
