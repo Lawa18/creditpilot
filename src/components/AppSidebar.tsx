@@ -4,41 +4,17 @@ import { NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { DEMO_MODE } from "@/lib/constants";
 
 const navItems = [
   { title: "Credit Events", path: "/events", icon: Zap },
   { title: "Actions", path: "/actions", icon: Wrench },
   { title: "AR Aging", path: "/aging", icon: BarChart2 },
   { title: "News Monitor", path: "/news", icon: Newspaper },
-  { title: "SEC Filings", path: "/sec", icon: FileSearch, badgeKey: "sec" as const },
+  { title: "SEC Filings", path: "/sec", icon: FileSearch },
   { title: "Customers", path: "/customers", icon: Users },
 ];
 
 export function AppSidebar() {
-  const { data: badges } = useQuery({
-    queryKey: ["sidebar-badges"],
-    queryFn: async () => {
-      const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
-
-      const newsCount = (DEMO_MODE && !hasActiveSession) ? 0 : await supabase
-        .from("negative_news")
-        .select("id", { count: "exact", head: true })
-        .eq("reviewed", false)
-        .eq("is_demo", true)
-        .then(({ count }) => count ?? 0);
-
-      const { count: secCount } = await supabase
-        .from("sec_filings")
-        .select("id", { count: "exact", head: true })
-        .eq("reviewed", false)
-        .eq("is_demo", true);
-
-      return { news: newsCount, sec: secCount ?? 0 };
-    },
-    refetchInterval: 30000,
-  });
-
   const { data: company } = useQuery({
     queryKey: ["company"],
     queryFn: async () => {
@@ -70,11 +46,6 @@ export function AppSidebar() {
           >
             <item.icon className="h-4 w-4 shrink-0" />
             <span className="flex-1">{item.title}</span>
-            {item.badgeKey && badges && badges[item.badgeKey] > 0 && (
-              <span className="bg-severity-critical text-primary-foreground text-[10px] font-semibold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                {badges[item.badgeKey]}
-              </span>
-            )}
           </NavLink>
         ))}
       </nav>
