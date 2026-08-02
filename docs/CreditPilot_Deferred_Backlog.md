@@ -649,3 +649,48 @@ Fixed: removed the blanket update entirely (commit 1db03aa). Safe to remove -- H
 ## Misleading SEC Filings sidebar badge — removed (2026-07-31)
 
 Found while investigating the above: the "2" badge next to SEC Filings in the sidebar was not a real notification count. It counted sec_filings WHERE reviewed=false -- reviewed is part of a hand-review workflow that was never built (already documented elsewhere in this backlog as unused workflow cruft), so the badge always showed the total demo filing count, not genuinely unread items. Removed entirely (commit ae665cf), along with a related fully-dead "news" badge count that was computed but never displayed anywhere (News Monitor never had a badgeKey to show it).
+
+---
+
+## CIK data quality audit — 27 of 47 monitored companies had wrong CIKs (2026-08-01)
+
+Triggered by user review: clicked "View SEC Filings" for Spirit Airlines and landed on Morningstar, Inc.'s real EDGAR page instead. Investigation found this was not an isolated error or a link-construction bug (the generated URL and link logic were confirmed correct) -- the underlying CIK value stored for Spirit Airlines (0001289419) was simply wrong; it happens to be Morningstar's real, valid CIK.
+
+Given one wrong CIK was found immediately, did a full verification pass across all 47 monitored companies against live SEC EDGAR data (cross-referenced against SEC's official company_tickers.json bulk file plus individual EDGAR searches for companies not in that file). Result: **27 of 47 (57%) had wrong CIKs.** Several pointed to entirely unrelated real companies: Spirit Airlines -> Morningstar, Haynes International -> Hasbro, Precision Castparts -> PPG Industries, Yellow Corporation -> MYR Group. Most others were near-miss transpositions/typos of the correct CIK (e.g. Lockheed Martin 936395 vs real 936468, Curtiss-Wright 26535 vs real 26324) -- consistent with manual transcription errors during original seeding, not a systematic generation bug.
+
+20 of 47 were confirmed correct: AECOM, Baker Hughes, Bloom Energy, Chart Industries, Ducommun, HEICO, Heliogen, Howmet, Huntington Ingalls, Kaman, Moog, Parker Hannifin, Rite Aid, Spirit AeroSystems, Superior Industries, Textron, Boeing, TransDigm, Triumph Group, Woodward.
+
+Fixed: all 27 corrected in customer_identifiers (source of truth) -- live database (commit via direct SQL, verified with dry-run/commit pattern) and supabase/seed.sql (commit 508e4ac), so the fix persists on a fresh database load. sec_monitoring did not need separate correction -- its rows for these 27 companies are generated dynamically from customer_identifiers on load, not stored as independent seed values. Harness 8/8 throughout.
+
+**Full list of corrections (company: wrong CIK -> correct CIK):**
+American Airlines Group: 0000004515 -> 0000006201
+Archer Aviation: 0001779128 -> 0001824502
+Arconic Corporation: 0001790420 -> 0001790982
+CIRCOR International: 0001060349 -> 0001091883
+Coeur Mining: 0000215243 -> 0000215466
+Curtiss-Wright: 0000026535 -> 0000026324
+GE Vernova: 0002013928 -> 0001996810
+GE (Power segment): 0000040534 -> 0000040545
+Global Power Equipment Group: 0001282266 -> 0001136294
+Haynes International: 0000046080 -> 0000858655
+Joby Aviation: 0001724570 -> 0001819848
+Leonardo DRS: 0001675644 -> 0001833756
+Liqtech International: 0001307950 -> 0001307579
+Lockheed Martin: 0000936395 -> 0000936468
+Maxar Technologies: 0001802665 -> 0001121142
+McDermott International: 0000854422 -> 0000708819
+Mistras Group: 0001436523 -> 0001436126
+Orbital Energy Group: 0000060714 -> 0001108967
+Precision Castparts: 0000079879 -> 0000079958
+ProPetro Holding: 0001681903 -> 0001680247
+Proterra: 0001816810 -> 0001820630
+Ranger Energy Services: 0001679363 -> 0001699039
+Raytheon/RTX: 0000101830 -> 0000101829
+Spirit Airlines: 0001289419 -> 0001498710
+Vertex Energy: 0001396033 -> 0000890447
+Watts Water Technologies: 0001410172 -> 0000795403
+Yellow Corporation: 0000700923 -> 0000716006
+
+**Lesson:** this confirms the same class of issue as the original Heliogen CIK error that motivated building customer_identifiers in the first place -- but at far larger scale than previously known. The B-prime backlog item's planned "full CIK-vs-EDGAR verification pass across all customers" (referenced multiple times as intended work) either never actually ran, or ran and its results were never applied. This pass should be considered done now for the 47 currently-monitored companies, but the same verification should be applied to any customer identifiers added in the future (e.g. once DUNS backfill happens) rather than assuming manually-entered demo data is correct without checking.
+
+**Explicitly deferred:** DUNS backfill for all 59 customers -- user will source this manually, post-audit, separate task from this CIK correction.
