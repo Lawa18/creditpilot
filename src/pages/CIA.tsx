@@ -223,7 +223,7 @@ export default function CIA() {
           </div>
 
           {/* Sources section */}
-          {answer.sources.length > 0 && (
+          {answer.sources.length > 0 ? (
             <div className="space-y-1">
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sources</p>
               <div className="border-t border-gray-100 pt-3 space-y-2">
@@ -244,6 +244,13 @@ export default function CIA() {
                     <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
                   </button>
                 ))}
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sources</p>
+              <div className="border-t border-gray-100 pt-3">
+                <p className="text-sm text-muted-foreground italic">This answer is based on portfolio-level data (customers table) rather than a specific dated event — no individual source records to cite.</p>
               </div>
             </div>
           )}
