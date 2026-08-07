@@ -7,10 +7,14 @@ import { relativeTime } from "@/lib/format";
 import { SkeletonCard, SkeletonTable } from "@/components/SkeletonCard";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 export default function NewsMonitor() {
   const [search, setSearch] = useState("");
+  const [searchParams] = useSearchParams();
+  const highlightedEventId = searchParams.get("event_id");
 
   const { data: news, isLoading } = useQuery({
     queryKey: ["news-monitor"],
@@ -29,6 +33,11 @@ export default function NewsMonitor() {
     !search || n.headline.toLowerCase().includes(search.toLowerCase()) ||
     (n.customers as any)?.company_name?.toLowerCase().includes(search.toLowerCase())
   );
+
+  useEffect(() => {
+    if (!highlightedEventId || isLoading) return;
+    document.getElementById(`news-${highlightedEventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedEventId, isLoading, news]);
 
   const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
 
@@ -65,7 +74,14 @@ export default function NewsMonitor() {
           <h2 className="text-sm font-semibold text-agent-aging mb-3">Needs Review ({unreviewed.length})</h2>
           <div className="space-y-3">
             {unreviewed.map((n: any) => (
-              <div key={n.id} className="bg-card rounded-lg border p-4">
+              <div
+                key={n.id}
+                id={`news-${n.id}`}
+                className={cn(
+                  "bg-card rounded-lg border p-4",
+                  n.id === highlightedEventId && "ring-2 ring-blue-500"
+                )}
+              >
                 <div className="flex items-start gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">

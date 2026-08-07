@@ -781,11 +781,13 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
       // Build sources deterministically from the rows that fed the answer — never from
       // the LLM (which intermittently returned empty arrays or fabricated events).
       // Build sources deterministically from fetched credit_events only.
-      const sources: Array<{customer_name: string; event_type: string | null; severity: string | null; date: string | null; agent: string | null}> = [];
+      const sources: Array<{event_id: string; source_type: "credit_events" | "negative_news" | "sec_filings"; customer_name: string; event_type: string | null; severity: string | null; date: string | null; agent: string | null}> = [];
       for (const ev of (data.credit_events_matched ?? [])) {
         const custName = (ev as any).customers?.company_name ?? null;
         if (!custName) continue;
         sources.push({
+          event_id: (ev as any).id,
+          source_type: "credit_events",
           customer_name: custName,
           event_type: (ev as any).event_type ?? null,
           severity: (ev as any).severity ?? null,
@@ -797,6 +799,8 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
         const custName = (n as any).customers?.company_name ?? null;
         if (!custName) continue;
         sources.push({
+          event_id: (n as any).id,
+          source_type: "negative_news",
           customer_name: custName,
           event_type: "NEGATIVE_NEWS",
           severity: (n as any).severity ?? null,
@@ -808,6 +812,8 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
         const custName = (f as any).customers?.company_name ?? null;
         if (!custName) continue;
         sources.push({
+          event_id: (f as any).customer_id,
+          source_type: "sec_filings",
           customer_name: custName,
           event_type: (f as any).filing_type ?? "SEC_FILING",
           severity: null,

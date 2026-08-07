@@ -10,8 +10,9 @@ import ReactMarkdown from "react-markdown";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Source {
+export interface Source {
   event_id: string;
+  source_type: "credit_events" | "negative_news" | "sec_filings";
   customer_name: string;
   event_type: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
@@ -19,7 +20,7 @@ interface Source {
   agent: string;
 }
 
-interface CIAAnswer {
+export interface CIAAnswer {
   answer: string;
   sources: Source[];
   confidence: "High" | "Medium" | "Low";
@@ -171,8 +172,10 @@ export default function CIA() {
     setRelated(questions.filter(s => s !== question).slice(0, 3));
   }, [answer, question]);
 
-  const handleSourceClick = (eventId: string) => {
-    navigate(`/events?event_id=${eventId}`);
+  const handleSourceClick = (source: Source) => {
+    if (source.source_type === "negative_news") navigate(`/news?event_id=${source.event_id}`);
+    else if (source.source_type === "sec_filings") navigate(`/sec?customer_id=${source.event_id}`);
+    else navigate(`/events?event_id=${source.event_id}`);
   };
 
   const handleRelated = (q: string) => {
@@ -230,7 +233,7 @@ export default function CIA() {
                 {answer.sources.map((s, i) => (
                   <button
                     key={s.event_id}
-                    onClick={() => handleSourceClick(s.event_id)}
+                    onClick={() => handleSourceClick(s)}
                     className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 bg-white hover:bg-gray-50 transition-colors text-left group"
                   >
                     <span className="text-xs font-mono text-muted-foreground w-4 shrink-0">[{i + 1}]</span>

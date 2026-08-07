@@ -4,8 +4,14 @@ import { DEMO_MODE } from "@/lib/constants";
 import { SkeletonCard } from "@/components/SkeletonCard";
 import { Badge } from "@/components/ui/badge";
 import { ExternalLink, ShieldAlert } from "lucide-react";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 export default function SecFilings() {
+  const [searchParams] = useSearchParams();
+  const highlightedCustomerId = searchParams.get("customer_id");
+
   const { data: monitoring, isLoading } = useQuery({
     queryKey: ["sec-monitoring"],
     queryFn: async () => {
@@ -45,6 +51,11 @@ export default function SecFilings() {
     return acc;
   }, {});
 
+  useEffect(() => {
+    if (!highlightedCustomerId || isLoading) return;
+    document.getElementById(`sec-${highlightedCustomerId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedCustomerId, isLoading, monitoring]);
+
   if (isLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>;
 
   if (!monitoring || monitoring.length === 0) {
@@ -75,7 +86,14 @@ export default function SecFilings() {
           const events = customerEvents?.types ?? [];
           const secUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${d.cik}&type=10-K&dateb=&owner=include&count=10`;
           return (
-            <div key={d.id} className="bg-card rounded-xl border overflow-hidden">
+            <div
+              key={d.id}
+              id={`sec-${d.customer_id}`}
+              className={cn(
+                "bg-card rounded-xl border overflow-hidden",
+                d.customer_id === highlightedCustomerId && "ring-2 ring-blue-500"
+              )}
+            >
               <div className="p-4">
                 {/* Header row */}
                 <div className="flex items-start justify-between gap-4">
