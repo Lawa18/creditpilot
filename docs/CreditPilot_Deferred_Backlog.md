@@ -694,3 +694,19 @@ Yellow Corporation: 0000700923 -> 0000716006
 **Lesson:** this confirms the same class of issue as the original Heliogen CIK error that motivated building customer_identifiers in the first place -- but at far larger scale than previously known. The B-prime backlog item's planned "full CIK-vs-EDGAR verification pass across all customers" (referenced multiple times as intended work) either never actually ran, or ran and its results were never applied. This pass should be considered done now for the 47 currently-monitored companies, but the same verification should be applied to any customer identifiers added in the future (e.g. once DUNS backfill happens) rather than assuming manually-entered demo data is correct without checking.
 
 **Explicitly deferred:** DUNS backfill for all 59 customers -- user will source this manually, post-audit, separate task from this CIK correction.
+
+---
+
+## CIA demo/production design + critical source-click-through bug (2026-08-03)
+
+**Demo cost/quality design.** Discussed whether live question-mode in demo (already capped at 5 questions/visitor, cheapest model) needed further cost control. Decided against reducing it -- the existing cap is reasonable -- but improved quality control instead: the 4 suggested questions now serve pre-generated real answers (captured live from the actual pipeline this session, after this session's CIK corrections, so the underlying data was as clean as it's been) instead of hitting the live API every time. Zero cost, zero risk of an unpredictable/embarrassing answer for the most common demo interaction, while genuine free-text search stays fully live and capped as before. Answers stored in src/lib/demoAnswers.ts, wired into CIA.tsx's question flow (commit 50c9acb) -- checked before the live API call, does not count against the 5-question limit.
+
+**Critical bug found and fixed: CIA source cards have never actually linked anywhere.** Discovered while building the static demo answers -- Claude Code correctly refused to fabricate event_id values, which surfaced that the live backend never populated event_id in the sources array at all (the type declaration never included it), and separately that 2 of the 3 destination pages (NewsMonitor.tsx, SecFilings.tsx) never read any URL query parameter to begin with. Clicking a source card in the live CIA has likely never worked correctly since the feature was built.
+
+Fixed properly, not just patched: backend now includes event_id (and a new source_type field distinguishing credit_events/negative_news/sec_filings) in every source. Frontend routes each source type to the correct page: credit_events -> /events, negative_news -> /news, sec_filings -> /sec (using customer_id, not the filing's own id, since SecFilings.tsx renders one card per company from sec_monitoring, not one per filing -- a structural mismatch that would have broken even a naive id-based fix). All three destination pages now highlight and scroll to the matching record. Commits 1fa3a12, 6956167.
+
+**Also fixed:** the CIA answer page previously rendered nothing at all when an answer had zero sources (the honest case where an answer is grounded in customers-table data rather than a specific event) -- looked identical to something broken. Now shows an explanatory note instead. Commit 506c805.
+
+**Also fixed:** the CreditEvents.tsx half of the original source-click fix was built but never actually committed in an earlier step this session -- caught during a later diff review, folded into commit 6956167.
+
+Harness 8/8 throughout. Full build verified clean at each step.
