@@ -483,9 +483,13 @@ async function fetchRelevantData(
       results.invoices = (data ?? []).map((inv: any) => {
         const dueDate = new Date(inv.due_date + "T00:00:00Z");
         const liveDaysOverdue = Math.max(0, Math.floor((today.getTime() - dueDate.getTime()) / 86400000));
+        const liveStatus = (inv.status === "current" || inv.status === "overdue")
+          ? (liveDaysOverdue > 0 ? "overdue" : "current")
+          : inv.status;
         return {
           ...inv,
           days_overdue: liveDaysOverdue,
+          status: liveStatus,
           company_name: customerMap[inv.customer_id] ?? inv.customer_id,
         };
       });
