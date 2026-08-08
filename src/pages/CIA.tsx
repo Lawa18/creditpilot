@@ -6,6 +6,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { DEMO_MODE, CIA_DEMO_QUESTION_LIMIT } from "@/lib/constants";
+import { DEMO_ANSWERS } from "@/lib/demoAnswers";
 import ReactMarkdown from "react-markdown";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -148,6 +149,12 @@ export default function CIA() {
         confidence_reason: 'Demo question limit reached.',
         relatedQuestions: [],
       });
+      setIsLoading(false);
+      return;
+    }
+
+    if (DEMO_MODE && DEMO_ANSWERS[question]) {
+      setAnswer(DEMO_ANSWERS[question]);
       setIsLoading(false);
       return;
     }
