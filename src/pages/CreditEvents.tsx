@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { AgentPill } from "@/components/AgentPill";
@@ -9,7 +9,8 @@ import { SkeletonCard } from "@/components/SkeletonCard";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { cn } from "@/lib/utils";
 
 const AGENT_TABS = [
   { value: "all", label: "All" },
@@ -21,6 +22,8 @@ const AGENT_TABS = [
 export default function CreditEvents() {
   const [agentFilter, setAgentFilter] = useState("all");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const highlightedEventId = searchParams.get("event_id");
 
   const { data: pendingCount } = useQuery({
     queryKey: ["pending-actions-count"],
@@ -54,6 +57,11 @@ export default function CreditEvents() {
     },
     refetchInterval: 30000,
   });
+
+  useEffect(() => {
+    if (!highlightedEventId || isLoading) return;
+    document.getElementById(`event-${highlightedEventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedEventId, isLoading, events]);
 
   const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
   const showPendingBanner = DEMO_MODE
@@ -103,7 +111,14 @@ export default function CreditEvents() {
           <div className="text-center py-12 text-muted-foreground text-sm">No credit events found</div>
         ) : (
           (events ?? []).map((evt: any) => (
-            <div key={evt.id} className="bg-card rounded-xl border p-4">
+            <div
+              key={evt.id}
+              id={`event-${evt.id}`}
+              className={cn(
+                "bg-card rounded-xl border p-4",
+                evt.id === highlightedEventId && "ring-2 ring-blue-500"
+              )}
+            >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">

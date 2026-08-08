@@ -11,13 +11,14 @@ import ReactMarkdown from "react-markdown";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface Source {
-  event_id: string;
-  source_type: "credit_events" | "negative_news" | "sec_filings";
+  event_id?: string;
+  source_type?: "credit_events" | "negative_news" | "sec_filings";
   customer_name: string;
   event_type: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
   date: string;
   agent: string;
+  static?: boolean;
 }
 
 export interface CIAAnswer {
@@ -173,6 +174,7 @@ export default function CIA() {
   }, [answer, question]);
 
   const handleSourceClick = (source: Source) => {
+    if (source.static) return;
     if (source.source_type === "negative_news") navigate(`/news?event_id=${source.event_id}`);
     else if (source.source_type === "sec_filings") navigate(`/sec?customer_id=${source.event_id}`);
     else navigate(`/events?event_id=${source.event_id}`);
@@ -231,21 +233,38 @@ export default function CIA() {
               <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Sources</p>
               <div className="border-t border-gray-100 pt-3 space-y-2">
                 {answer.sources.map((s, i) => (
-                  <button
-                    key={s.event_id}
-                    onClick={() => handleSourceClick(s)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 bg-white hover:bg-gray-50 transition-colors text-left group"
-                  >
-                    <span className="text-xs font-mono text-muted-foreground w-4 shrink-0">[{i + 1}]</span>
-                    <span className={cn("w-2 h-2 rounded-full shrink-0", severityDot(s.severity))} />
-                    <span className="text-sm font-medium text-gray-800 truncate">{s.customer_name}</span>
-                    <span className="text-gray-300">·</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{agentLabel(s.agent)}</span>
-                    <span className="text-gray-300">·</span>
-                    <span className="text-xs font-mono text-muted-foreground truncate">{s.event_type.replace(/_/g, " ")}</span>
-                    <span className="text-gray-300 ml-auto">·</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
-                  </button>
+                  s.static ? (
+                    <div
+                      key={s.event_id ?? i}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 bg-white text-left"
+                    >
+                      <span className="text-xs font-mono text-muted-foreground w-4 shrink-0">[{i + 1}]</span>
+                      <span className={cn("w-2 h-2 rounded-full shrink-0", severityDot(s.severity))} />
+                      <span className="text-sm font-medium text-gray-800 truncate">{s.customer_name}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{agentLabel(s.agent)}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-xs font-mono text-muted-foreground truncate">{s.event_type.replace(/_/g, " ")}</span>
+                      <span className="text-gray-300 ml-auto">·</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
+                    </div>
+                  ) : (
+                    <button
+                      key={s.event_id ?? i}
+                      onClick={() => handleSourceClick(s)}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg border border-gray-100 bg-white hover:bg-gray-50 transition-colors text-left group"
+                    >
+                      <span className="text-xs font-mono text-muted-foreground w-4 shrink-0">[{i + 1}]</span>
+                      <span className={cn("w-2 h-2 rounded-full shrink-0", severityDot(s.severity))} />
+                      <span className="text-sm font-medium text-gray-800 truncate">{s.customer_name}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{agentLabel(s.agent)}</span>
+                      <span className="text-gray-300">·</span>
+                      <span className="text-xs font-mono text-muted-foreground truncate">{s.event_type.replace(/_/g, " ")}</span>
+                      <span className="text-gray-300 ml-auto">·</span>
+                      <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
+                    </button>
+                  )
                 ))}
               </div>
             </div>
