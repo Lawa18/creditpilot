@@ -13,7 +13,7 @@ export const DEMO_ANSWERS: Record<string, CIAAnswer> = {
     relatedQuestions: [
       "Given Triumph Group's covenant breach and recent waiver, what are the specific financial covenants they violated, and when is the next covenant compliance date or waiver expiration?",
       "Of the $1.1M overdue AR across those 3 invoices, which customer accounts are responsible for the largest amounts, and have they indicated payment plans or disputes?",
-      "Has Triumph Group's liquidity position (cash on hand, available credit lines) deteriorated since the covenant breach, and does management expect additional waivers or refinancing needs in the next 6 months?",
+      "Can you list every individual overdue invoice for Triumph Group with exact invoice numbers and days overdue?",
     ],
   },
   "Which customers have the highest credit risk right now?": {
