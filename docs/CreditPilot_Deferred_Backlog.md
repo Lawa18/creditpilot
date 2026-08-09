@@ -724,3 +724,13 @@ Fixed: added the same liveStatus computation already used in Customers.tsx (only
 **Lesson, reinforcing G1/G1-three-check:** when fixing a live-vs-stored staleness bug on a row that has BOTH a status field and a days-derived field (invoices has both status and days_overdue, both driven by the same due_date), fixing one without checking for sibling stale fields on the same row leaves a partial, still-buggy state. Worth a final sweep: grep for any other place reading invoices.status directly without the same live-recompute treatment (this session found and fixed it in cia-agent and Customers.tsx; worth confirming ar-aging-agent's own status reads, if any, don't have the same gap -- not checked this session).
 
 Checked (2026-08-08): ar-aging-agent does NOT have this gap -- its overdue filtering (.not("status", "in", "(paid,written_off,pre_petition)")) only excludes terminal statuses and never relies on distinguishing current vs overdue specifically; actual overdue-ness is determined purely from due_date (already fixed earlier this session), so there's no stale current/overdue status dependency to fix here. This closes out the sweep -- cia-agent and Customers.tsx were the only two places with the bug, both now fixed.
+
+---
+
+## Source relevance bug — generic corporate-suffix words polluting matches (2026-08-09)
+
+Found via live user testing: "Any news on Triumph Group?" returned 15 sources, only 4 actually about Triumph Group -- the other 11 were unrelated companies (Orbital Energy Group, Nordam Group, Mistras Group, American Airlines Group, TransDigm Group, etc.) that happened to be high-severity events. Root cause: the credit_events keyword-matching stoplist (KEYWORD_STOPLIST) was designed to filter generic question-scaffolding words ("customer", "portfolio", "recent") but never accounted for common corporate-entity-name suffixes. "Group" alone matched 14 of the demo's ~20-30 credit_events (confirmed via direct query), since many demo company names end in "Group Inc"/"Group LLC".
+
+Fixed: added group, corporation, incorporated, holdings, holding, industries, international, systems, technologies, solutions to KEYWORD_STOPLIST (company/companies were already present). Commit 9d8cc0b. Verified live: the same question now returns exactly 4 sources, all genuinely Triumph Group. Harness 8/8.
+
+**Note for future coverage:** other generic suffixes not yet added (e.g. "enterprises", "partners", "group's" possessive form, "ltd", "inc", "llc" -- though the latter three are likely already filtered by the length>4 rule) could cause similar issues for company names not yet tested. Add to KEYWORD_STOPLIST as encountered rather than trying to enumerate exhaustively now.
