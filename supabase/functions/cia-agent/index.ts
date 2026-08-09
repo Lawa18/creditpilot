@@ -337,6 +337,8 @@ async function fetchRelevantData(
     "portfolio", "recent", "recently", "current", "currently", "about",
     "their", "there", "would", "should", "could", "right", "have", "having",
     "which", "where", "these", "those", "still", "being", "across",
+    "group", "corporation", "incorporated", "holdings", "holding",
+    "industries", "international", "systems", "technologies", "solutions",
   ]);
 
   // Build keyword filter for text search
