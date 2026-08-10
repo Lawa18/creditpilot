@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
       const monitoringId = row.id as string;
       const customerId   = row.customer_id as string;
       const cik          = row.cik as string | null;
-      const customer     = row.customers as { company_name: string };
+      const customer     = row.customers as any;
       const companyName  = customer.company_name;
 
       if (!cik) {
