@@ -734,3 +734,17 @@ Found via live user testing: "Any news on Triumph Group?" returned 15 sources, o
 Fixed: added group, corporation, incorporated, holdings, holding, industries, international, systems, technologies, solutions to KEYWORD_STOPLIST (company/companies were already present). Commit 9d8cc0b. Verified live: the same question now returns exactly 4 sources, all genuinely Triumph Group. Harness 8/8.
 
 **Note for future coverage:** other generic suffixes not yet added (e.g. "enterprises", "partners", "group's" possessive form, "ltd", "inc", "llc" -- though the latter three are likely already filtered by the length>4 rule) could cause similar issues for company names not yet tested. Add to KEYWORD_STOPLIST as encountered rather than trying to enumerate exhaustively now.
+
+---
+
+## Deno type-check audit — all 5 edge functions, completed (2026-08-09)
+
+Ran `deno check` against every edge function's entry point (ar-aging-agent, news-monitor-agent, sec-monitor-agent, cia-agent, ar-csv-upload) -- the last unfinished item from this session's systematic four-part audit plan (column-drop audit, table audit, live click-through, and this).
+
+ar-aging-agent, cia-agent, ar-csv-upload: clean, zero errors, no changes needed.
+
+news-monitor-agent: 29 reported errors, all traced to a single root cause -- legacyPath's `supabase: ReturnType<typeof createClient>` parameter type, a known TypeScript generic-inference edge case (ReturnType on a generic function without explicit type arguments can resolve inconsistently). Zero runtime impact (Deno strips types before execution) -- confirmed the fix (changing to `any`, matching this codebase's existing loose Supabase-typing convention) resolved all 29 errors in one line change. Commit 63a4272.
+
+sec-monitor-agent: 1 error -- `row.customers as { company_name: string }` type assertion failed because TypeScript's generated type inferred the embedded relation as an array, while runtime (confirmed via extensive live testing throughout this session) returns a single object for this to-one relationship. Changed to `any`, same convention. Commit 1927d9d.
+
+Harness 8/8 after both fixes. This completes the planned four-part audit (column-drop sweep, table audit, live click-through, Deno type-check) -- all four came back clean or with issues found-and-fixed, no unresolved findings remaining from that plan.
