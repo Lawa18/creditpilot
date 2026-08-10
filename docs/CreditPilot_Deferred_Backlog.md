@@ -748,3 +748,11 @@ news-monitor-agent: 29 reported errors, all traced to a single root cause -- leg
 sec-monitor-agent: 1 error -- `row.customers as { company_name: string }` type assertion failed because TypeScript's generated type inferred the embedded relation as an array, while runtime (confirmed via extensive live testing throughout this session) returns a single object for this to-one relationship. Changed to `any`, same convention. Commit 1927d9d.
 
 Harness 8/8 after both fixes. This completes the planned four-part audit (column-drop sweep, table audit, live click-through, Deno type-check) -- all four came back clean or with issues found-and-fixed, no unresolved findings remaining from that plan.
+
+---
+
+## Ticker data-quality verification — clean, no corrections needed (2026-08-09)
+
+Given the 27-wrong-CIK finding, checked whether the 47 ticker values in customer_identifiers had the same problem. Cross-referenced ~25 against the SEC company_tickers.json bulk file already fetched this session (all matched exactly, including two that also independently confirmed their corrected CIK values: Orbital Energy Group's SEC filing URL contained CIK 1108967, LiqTech's contained 1307579, both matching this session's CIK corrections). Spot-checked 3 of the smaller/less common tickers not in the bulk file (Global Power Equipment/GLPW, Orbital Energy Group/OEG, LiqTech/LIQT) via direct web search -- all confirmed correct.
+
+Conclusion: tickers do not show the same error pattern as CIKs. Plausible explanation: tickers are short, memorable strings while CIKs are 10-digit numbers -- manual transcription of the latter is far more error-prone, consistent with the specific error types found (transpositions, off-by-one digits). No corrections applied; ticker data confirmed clean.
