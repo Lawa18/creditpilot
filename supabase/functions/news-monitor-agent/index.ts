@@ -349,7 +349,7 @@ Deno.serve(async (req) => {
 // the top 5 critical/high items, writes credit events and agent_messages.
 
 async function legacyPath(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   run_id: string,
   agent_name: string,
   headers: Record<string, string>
