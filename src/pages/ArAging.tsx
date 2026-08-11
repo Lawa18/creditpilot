@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { RiskTierBadge } from "@/components/RiskTierBadge";
-import { formatCurrency, formatPct, relativeTime } from "@/lib/format";
+import { formatCurrency, formatPct } from "@/lib/format";
 import { SkeletonCard, SkeletonTable } from "@/components/SkeletonCard";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -68,21 +68,6 @@ export default function ArAging() {
     queryKey: ["ar-aging-customers"],
     queryFn: async () => {
       const { data } = await supabase.from("v_ar_aging_current").select("*").order("total_outstanding", { ascending: false });
-      return data ?? [];
-    },
-  });
-
-  const { data: actions } = useQuery({
-    queryKey: ["ar-aging-actions"],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from("pending_actions")
-        .select("*, customers!inner(company_name)")
-        .eq("agent_name", "ar_aging_agent")
-        .eq("status", "pending")
-        .eq("is_demo", true)
-        .order("created_at", { ascending: false })
-        .limit(20);
       return data ?? [];
     },
   });
@@ -230,68 +215,45 @@ export default function ArAging() {
         </div>
       </div>
 
-      <div className="flex gap-6">
-        {/* Customer Table */}
-        <div className="flex-1 min-w-0">
-          {cLoading ? <SkeletonTable rows={10} /> : (
-            <div className="bg-card rounded-xl border overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead className="bg-secondary/50 sticky top-0">
-                    <tr className="text-muted-foreground">
-                      <th className="text-left p-3 font-medium whitespace-nowrap">Customer</th>
-                      <th className="text-left p-3 font-medium">Risk</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">Current</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">1–30</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">31–60</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">61–90</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">90+</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">Total AR</th>
-                      <th className="text-right p-3 font-medium whitespace-nowrap">Util%</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {(customers ?? []).filter(c => Number(c.total_outstanding) > 0).map((c: any) => (
-                      <tr key={c.id} className="hover:bg-secondary/30">
-                        <td className="p-3">
-                          <span className="font-medium text-foreground">{c.company_name}</span>
-                        </td>
-                        <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.current_amount)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_1_30)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_31_60)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_61_90)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_over_90)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_outstanding)}</td>
-                        <td className="p-3 text-right font-mono tabular-nums">{formatPct(c.utilization_pct)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Right sidebar - recent actions */}
-        <div className="w-64 shrink-0">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Recent Agent Actions</h2>
-          <div className="space-y-2">
-            {(actions ?? []).length === 0 ? (
-              <p className="text-xs text-muted-foreground">No recent agent actions. Actions will appear here after the AR Aging agent runs.</p>
-            ) : (
-              (actions ?? []).map((a: any) => (
-                <div key={a.id} className="bg-card rounded-lg border p-3 border-l-4 border-l-agent-aging">
-                  <p className="text-[10px] text-muted-foreground">{relativeTime(a.created_at)}</p>
-                  <p className="text-xs font-medium text-foreground">{(a.customers as any).company_name}</p>
-                  <p className="text-xs text-muted-foreground capitalize">{a.action_type.replace(/_/g, " ")}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1 line-clamp-2">{a.rationale}</p>
-                </div>
-              ))
-            )}
+      {/* Customer Table */}
+      {cLoading ? <SkeletonTable rows={10} /> : (
+        <div className="bg-card rounded-xl border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-secondary/50 sticky top-0">
+                <tr className="text-muted-foreground">
+                  <th className="text-left p-3 font-medium whitespace-nowrap">Customer</th>
+                  <th className="text-left p-3 font-medium">Risk</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">Current</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">1–30</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">31–60</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">61–90</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">90+</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">Total AR</th>
+                  <th className="text-right p-3 font-medium whitespace-nowrap">Util%</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(customers ?? []).filter(c => Number(c.total_outstanding) > 0).map((c: any) => (
+                  <tr key={c.id} className="hover:bg-secondary/30">
+                    <td className="p-3">
+                      <span className="font-medium text-foreground">{c.company_name}</span>
+                    </td>
+                    <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
+                    <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.current_amount)}</td>
+                    <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_1_30)}</td>
+                    <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_31_60)}</td>
+                    <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_61_90)}</td>
+                    <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.bucket_over_90)}</td>
+                    <td className="p-3 text-right font-mono tabular-nums font-semibold">{formatCurrency(c.total_outstanding)}</td>
+                    <td className="p-3 text-right font-mono tabular-nums">{formatPct(c.utilization_pct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Upload Dialog */}
       <Dialog open={uploadOpen} onOpenChange={(open) => { if (!open) handleDialogClose(); }}>
