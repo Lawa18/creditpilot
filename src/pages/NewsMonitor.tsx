@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { DEMO_MODE } from "@/lib/constants";
 import { supabase } from "@/integrations/supabase/client";
 import { AgentPill } from "@/components/AgentPill";
 import { SeverityBadge } from "@/components/SeverityBadge";
@@ -38,22 +37,6 @@ export default function NewsMonitor() {
     if (!highlightedEventId || isLoading) return;
     document.getElementById(`news-${highlightedEventId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [highlightedEventId, isLoading, news]);
-
-  const hasActiveSession = sessionStorage.getItem("demo_activated") === "true";
-
-  if (DEMO_MODE && !hasActiveSession) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">News Monitor</h1>
-          <p className="text-xs text-muted-foreground mt-1">Negative news alerts for monitored customers.</p>
-        </div>
-        <div className="flex items-center justify-center h-64 border border-dashed rounded-xl text-muted-foreground text-sm">
-          No news alerts found. Agents will populate this automatically.
-        </div>
-      </div>
-    );
-  }
 
   if (isLoading) return <div className="space-y-4"><SkeletonCard /><SkeletonTable rows={8} /></div>;
 
