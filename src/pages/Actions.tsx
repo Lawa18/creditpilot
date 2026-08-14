@@ -138,33 +138,35 @@ export default function Actions() {
             AI-recommended actions awaiting your approval.
           </p>
         </div>
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground">
-              <RotateCcw className="h-3.5 w-3.5" />
-              Reset Demo
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Reset the demo?</AlertDialogTitle>
-              <AlertDialogDescription>
-                This will restore all pending actions, SEC alerts, credit limits, and news reviewed state.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={resetDemo}
-                disabled={resetting}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                {resetting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-                Reset
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        {DEMO_MODE && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground">
+                <RotateCcw className="h-3.5 w-3.5" />
+                Reset Demo
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reset the demo?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will restore all pending actions, SEC alerts, credit limits, and news reviewed state.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={resetDemo}
+                  disabled={resetting}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  {resetting && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+                  Reset
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
 
       {/* Pending Actions */}
