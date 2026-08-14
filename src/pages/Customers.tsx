@@ -13,7 +13,6 @@ import { AgentPill } from "@/components/AgentPill";
 import { relativeTime } from "@/lib/format";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { DEMO_MODE } from "@/lib/constants";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
