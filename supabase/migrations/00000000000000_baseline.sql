@@ -349,6 +349,22 @@ $$;
 
 
 --
+-- Name: fn_reset_demo_invoice_dates(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE OR REPLACE FUNCTION fn_reset_demo_invoice_dates() RETURNS void
+    LANGUAGE plpgsql
+    SET search_path = public, extensions
+    AS $$
+BEGIN
+  UPDATE invoices
+  SET due_date = CURRENT_DATE + demo_days_offset
+  WHERE demo_days_offset IS NOT NULL;
+END;
+$$;
+
+
+--
 -- Name: fn_trg_recalculate_exposure(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -821,6 +837,8 @@ CREATE TABLE public.invoices (
     outstanding_amount numeric DEFAULT 0 NOT NULL,
     currency text DEFAULT 'USD'::text
 );
+
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS demo_days_offset integer;
 
 
 --
