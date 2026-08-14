@@ -122,6 +122,10 @@ export async function initDemo() {
     .update({ cia_processed: false, cia_processed_at: null })
     .eq("is_demo", true);
 
+  // invoices — reset demo due_dates relative to today (prevents aging-bucket drift over time)
+  const { error: invoiceDateError } = await supabase.rpc("fn_reset_demo_invoice_dates");
+  if (invoiceDateError) console.error("[initDemo] invoice date reset failed:", invoiceDateError.message);
+
   // ── 2. Invoke all agents ──────────────────────────────────────────────────
 
   await Promise.all([
