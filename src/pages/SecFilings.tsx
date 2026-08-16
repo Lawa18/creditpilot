@@ -62,7 +62,7 @@ export default function SecFilings() {
       <div className="space-y-6">
         <div>
           <h1 className="text-xl font-semibold text-foreground">SEC Filings</h1>
-          <p className="text-xs text-muted-foreground mt-1">SEC filing data for monitored customers.</p>
+          <p className="text-xs text-muted-foreground mt-1">Per-company filing history and monitoring status — open one from a Credit Events source card for context, or browse below.</p>
         </div>
         <div className="flex items-center justify-center h-64 border border-dashed rounded-xl text-muted-foreground text-sm">
           No monitored customers found. Agents will populate this automatically.
@@ -75,7 +75,7 @@ export default function SecFilings() {
     <div className="space-y-6 pb-48">
       <div>
         <h1 className="text-xl font-semibold text-foreground">SEC Filings</h1>
-        <p className="text-xs text-muted-foreground mt-1">SEC filing data for monitored customers.</p>
+        <p className="text-xs text-muted-foreground mt-1">Per-company filing history and monitoring status — open one from a Credit Events source card for context, or browse below.</p>
       </div>
 
       <div className="space-y-4">
