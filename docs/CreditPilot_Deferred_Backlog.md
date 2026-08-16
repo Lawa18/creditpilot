@@ -822,3 +822,19 @@ Fixed: inserted the missing credit_events row directly, matching GoingConcernPay
 **Lesson:** the same "seeded end-state without the process that produces it" pattern already seen this session (alert_triggered on 44 companies, the AR aging snapshot staleness) -- worth a final targeted check: are there other sec_monitoring or negative_news rows with alert_triggered=true / reviewed states that similarly lack a matching credit_events row? Not swept exhaustively this session; Heliogen was found via direct visual comparison, not a systematic query.
 
 Checked systematically (2026-08-14): a direct query for any sec_monitoring row with alert_triggered=true lacking a matching credit_events row (source_agent='sec_monitor_agent') returns 0 rows -- Heliogen was the only instance and is now fixed. Same check against negative_news (any row lacking a matching credit_events row from news_monitor_agent) also returns 0 rows. This closes out the sweep cleanly -- no other orphaned alert/detection rows exist anywhere in the current dataset.
+
+---
+
+## Information architecture decision: Credit Events vs Actions vs News Monitor/SEC Filings (2026-08-14)
+
+Following the News Monitor "Needs Review" investigation, decided the product's three-tier structure explicitly, since it was implicit and partially undermined by the broken review workflow:
+
+- **Credit Events** = the cross-agent FYI log. Condensed, scannable, one entry per detection. No per-item state, nothing to mark done.
+- **Actions** = the only place review/approval happens. CIA-synthesized, multi-signal recommendations with a specific proposed change and rationale. Approve/Reject exists here and only here.
+- **News Monitor / SEC Filings** = detail archives, not competing review queues. Full article text / per-company filing history and coverage status. Intended to be drilled into from a Credit Events source card (built earlier this session), not top-level destinations in their own right, even though they remain in the sidebar.
+
+This resolves the direct tension the News Monitor investigation surfaced: three places showing overlapping content with no signal for why. The overlap is legitimate (activity feed + source archives is a normal pattern) but was previously uncommunicated.
+
+Implemented: NewsMonitor.tsx subtitle changed from an actionable-sounding article/unreviewed count to "Full article archive. {N} articles — open one from a Credit Events source card for context, or browse below." SecFilings.tsx subtitle changed identically in spirit: "Per-company filing history and monitoring status — open one from a Credit Events source card for context, or browse below." Commits 2ab69d9, b913609.
+
+**Longer-term idea (explicitly not committed to, not now):** user proposed a future configurable feature letting the user decide what qualifies as a Credit Event vs an Action, rather than the current hardcoded assessCompositeRisk/calculateCreditLimitProposal thresholds. Real idea, deliberately deferred per this backlog's existing "don't build speculatively" principle -- revisit if real usage shows the current thresholds don't match how users actually want to triage.
