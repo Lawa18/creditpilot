@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 const AGENT_TABS = [
   { value: "all", label: "All" },
@@ -24,6 +25,7 @@ export default function CreditEvents() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const highlightedEventId = searchParams.get("event_id");
+  const filterCustomerId = searchParams.get("customer_id");
 
   const { data: pendingCount } = useQuery({
     queryKey: ["pending-actions-count"],
@@ -39,7 +41,7 @@ export default function CreditEvents() {
   });
 
   const { data: events, isLoading } = useQuery({
-    queryKey: ["credit-events-feed", agentFilter],
+    queryKey: ["credit-events-feed", agentFilter, filterCustomerId],
     queryFn: async () => {
       let query = supabase
         .from("credit_events")
@@ -50,6 +52,10 @@ export default function CreditEvents() {
 
       if (agentFilter !== "all") {
         query = query.eq("source_agent", agentFilter);
+      }
+
+      if (filterCustomerId) {
+        query = query.eq("customer_id", filterCustomerId);
       }
 
       const { data } = await query;
@@ -76,6 +82,19 @@ export default function CreditEvents() {
           Unified signal log from all monitoring agents.
         </p>
       </div>
+
+      {filterCustomerId && (
+        <Badge variant="secondary" className="text-xs gap-1.5 w-fit">
+          Filtered: {events?.[0]?.customers?.company_name ?? "customer"}
+          <button
+            onClick={() => navigate("/events")}
+            className="ml-1 text-muted-foreground hover:text-foreground"
+            aria-label="Clear filter"
+          >
+            ×
+          </button>
+        </Badge>
+      )}
 
       {showPendingBanner && (
         <div className="flex items-center gap-3 bg-agent-aging/10 border border-agent-aging/30 rounded-xl px-4 py-3">
