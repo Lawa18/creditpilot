@@ -838,3 +838,20 @@ This resolves the direct tension the News Monitor investigation surfaced: three 
 Implemented: NewsMonitor.tsx subtitle changed from an actionable-sounding article/unreviewed count to "Full article archive. {N} articles — open one from a Credit Events source card for context, or browse below." SecFilings.tsx subtitle changed identically in spirit: "Per-company filing history and monitoring status — open one from a Credit Events source card for context, or browse below." Commits 2ab69d9, b913609.
 
 **Longer-term idea (explicitly not committed to, not now):** user proposed a future configurable feature letting the user decide what qualifies as a Credit Event vs an Action, rather than the current hardcoded assessCompositeRisk/calculateCreditLimitProposal thresholds. Real idea, deliberately deferred per this backlog's existing "don't build speculatively" principle -- revisit if real usage shows the current thresholds don't match how users actually want to triage.
+
+---
+
+## New customer onboarding -- real gap found, deferred to a dedicated session (2026-08-16)
+
+Found via live review: there is NO way to add a new customer through the UI anywhere in this app -- confirmed via full-codebase grep, zero matches for any "Add Customer" / customer-creation form. Combined with the locked V1 design (AR uploads never auto-create customers, reject unknown-customer rows by design), this means a brand-new production deployment cannot onboard a single real customer without direct database access. The V1 docs' "customers created manually for V1" phrasing assumed a CreditPilot team member doing that work during onboarding -- now that this is going open source with no onboarding team behind it, that assumption no longer holds.
+
+**Decided:** build a real "Add Customer" form -- not urgent-fix scope, but a genuine, real feature, scoped to its own dedicated session (not squeezed into this one). Purpose: let the user test a completely fresh, non-demo company's full journey end-to-end (add customer -> get an internal code -> upload a real AR CSV referencing that code -> watch aging/utilization/agent detection work on real non-demo data).
+
+**Requirements surfaced so far (not final, needs its own design session):**
+- User wants the form "more detailed" than a minimal MVP version -- specifics not yet scoped.
+- ERP integration matters here directly: internal_customer_code already exists in the schema specifically as "the customer's own internal code in their ERP for this entity" (per the original Customer Identifier Strategy doc) -- a future ERP sync (NetSuite, SAP, QuickBooks, etc.) would plug into this exact same field, matching incoming ERP records to existing customers the same way CSV uploads already do. The new customer form should likely label/frame this field with that future in mind (e.g. "ERP customer ID"), even though the actual ERP integration itself is out of scope for this build.
+- User's longer-term roadmap (explicitly V3/V4, not now): full customer onboarding flow including credit check, compliance checks, and fraud checks for new customers. Noted for context/future design coherence, not to be built now.
+
+**Deliberately out of scope for the eventual V1-scale build:** credit rating fields, DUNS/ticker/CIK entry, compliance/fraud checks, risk tags -- these are agent-populated or added later, not part of a basic add-customer form.
+
+Do this as its own focused session, with proper requirements-gathering first (what fields, what validation, how it relates to the eventual ERP-sync vision) rather than jumping straight to implementation.
