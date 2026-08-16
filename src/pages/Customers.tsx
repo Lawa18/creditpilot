@@ -269,7 +269,7 @@ function CustomerDetail({ customer }: { customer: any }) {
                 {(recentSignals ?? []).map((s: any) => (
                   <Link
                     key={s.id}
-                    to={`/events?customer_id=${customer.id}`}
+                    to={`/events?event_id=${s.id}`}
                     className="flex items-center gap-2 text-xs hover:bg-secondary/50 rounded px-1 py-0.5 transition-colors"
                   >
                     <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", signalDotColor(s.severity))} />
