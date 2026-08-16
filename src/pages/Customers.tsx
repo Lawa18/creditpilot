@@ -30,6 +30,15 @@ function signalDotColor(severity: string) {
   return "bg-muted-foreground";
 }
 
+function formatRatingSource(source: string): string {
+  const labels: Record<string, string> = {
+    sp: "S&P",
+    dnb_paydex: "D&B Paydex",
+    coface: "Coface",
+  };
+  return labels[source] ?? source;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Customers() {
@@ -203,7 +212,7 @@ function CustomerDetail({ customer }: { customer: any }) {
               {score != null ? score : "No Rating"}
             </p>
             {score != null && customer.credit_rating_source ? (
-              <p className="text-[10px] text-muted-foreground mt-0.5">{customer.credit_rating_source}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{formatRatingSource(customer.credit_rating_source)}</p>
             ) : score == null ? (
               <p className="text-[10px] text-muted-foreground mt-0.5">Provider: N/A</p>
             ) : null}
