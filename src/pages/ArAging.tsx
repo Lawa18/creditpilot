@@ -6,7 +6,7 @@ import { SkeletonCard, SkeletonTable } from "@/components/SkeletonCard";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { RefreshCw, Upload } from "lucide-react";
+import { Upload } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
 import { DEMO_MODE } from "@/lib/constants";
@@ -41,7 +41,6 @@ const REQUIRED_FIELDS = [
 
 export default function ArAging() {
   const queryClient = useQueryClient();
-  const [refreshing, setRefreshing] = useState(false);
 
   // Upload dialog state
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -73,17 +72,6 @@ export default function ArAging() {
   });
 
   // ── Handlers ───────────────────────────────────────────────────────────────
-
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    try {
-      const { error } = await supabase.rpc("fn_refresh_all_ar_aging", { p_as_of: new Date().toISOString().split("T")[0] });
-      if (error) throw error;
-      await Promise.all([refetchPortfolio(), refetchCustomers()]);
-      toast.success("AR aging refreshed");
-    } catch { toast.error("Failed to refresh"); }
-    setRefreshing(false);
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
@@ -181,10 +169,6 @@ export default function ArAging() {
           <Button size="sm" variant="outline" onClick={() => setUploadOpen(true)} className="h-8 text-xs gap-2">
             <Upload className="h-3 w-3" />
             Upload AR Data
-          </Button>
-          <Button size="sm" variant="outline" onClick={handleRefresh} disabled={refreshing} className="h-8 text-xs gap-2">
-            <RefreshCw className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-            Refresh Aging
           </Button>
         </div>
       </div>
