@@ -21,3 +21,11 @@ export function formatPct(value: number | null | undefined): string {
   if (value == null) return "0%";
   return `${value.toFixed(1)}%`;
 }
+
+export function scoreColor(score: number | null): string {
+  if (score == null) return "";
+  if (score >= 80) return "text-risk-current";
+  if (score >= 60) return "text-agent-aging";
+  if (score >= 40) return "text-severity-high";
+  return "text-severity-critical";
+}

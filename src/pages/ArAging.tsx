@@ -6,6 +6,8 @@ import { SkeletonCard, SkeletonTable } from "@/components/SkeletonCard";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { CustomerDetail } from "@/components/CustomerDetail";
 import { Upload } from "lucide-react";
 import { useState, useRef } from "react";
 import { toast } from "sonner";
@@ -41,6 +43,7 @@ const REQUIRED_FIELDS = [
 
 export default function ArAging() {
   const queryClient = useQueryClient();
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
 
   // Upload dialog state
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -70,6 +73,18 @@ export default function ArAging() {
       return data ?? [];
     },
   });
+
+  const { data: fullCustomers } = useQuery({
+    queryKey: ["ar-aging-full-customers"],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, company_name, scenario, credit_limit, current_exposure, credit_rating_score, credit_rating_source, risk_tags, risk_tags_updated_at, notes, account_manager, payment_terms_days");
+      return data ?? [];
+    },
+  });
+
+  const selectedCustomer = fullCustomers?.find((c) => c.id === selectedCustomerId);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -219,9 +234,14 @@ export default function ArAging() {
               </thead>
               <tbody className="divide-y divide-border">
                 {(customers ?? []).filter(c => Number(c.total_outstanding) > 0).map((c: any) => (
-                  <tr key={c.id} className="hover:bg-secondary/30">
+                  <tr key={c.customer_id} className="hover:bg-secondary/30">
                     <td className="p-3">
-                      <span className="font-medium text-foreground">{c.company_name}</span>
+                      <button
+                        onClick={() => setSelectedCustomerId(c.customer_id)}
+                        className="font-medium text-foreground hover:underline"
+                      >
+                        {c.company_name}
+                      </button>
                     </td>
                     <td className="p-3"><RiskTierBadge tier={c.risk_tier} /></td>
                     <td className="p-3 text-right font-mono tabular-nums">{formatCurrency(c.current_amount)}</td>
@@ -238,6 +258,13 @@ export default function ArAging() {
           </div>
         </div>
       )}
+
+      {/* Customer Detail Drawer */}
+      <Sheet open={!!selectedCustomerId} onOpenChange={(open) => !open && setSelectedCustomerId(null)}>
+        <SheetContent className="w-[480px] sm:max-w-[480px] overflow-y-auto">
+          {selectedCustomer && <CustomerDetail customer={selectedCustomer} />}
+        </SheetContent>
+      </Sheet>
 
       {/* Upload Dialog */}
       <Dialog open={uploadOpen} onOpenChange={(open) => { if (!open) handleDialogClose(); }}>
