@@ -81,6 +81,9 @@ export default function Actions() {
         action_type: action.action_type,
         description: `Approved. ${note ? note + ". " : ""}${action.rationale ?? ""}`,
         agent_name: action.agent_name,
+        old_limit: action.current_value,
+        new_limit: action.proposed_value,
+        performed_by: "demo_user",
       });
     },
     onSuccess: () => {
