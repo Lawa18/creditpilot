@@ -9,8 +9,8 @@
  *
  *   Base threshold: 75% utilization triggers action.
  *   Signal adjustments (cumulative, floor at 40%):
- *     NEGATIVE_NEWS_HIGH or NEGATIVE_NEWS_CRITICAL   −10pp
- *     GOING_CONCERN_WARNING                          −15pp
+ *     NEWS_EVENT (high or critical severity)         −10pp
+ *     GOING_CONCERN                                  −15pp
  *     COVENANT_WAIVER                                −12pp
  *     CEO_DEPARTURE                                  −5pp
  *     CREDIT_RATING_DOWNGRADE                        −10pp
@@ -77,14 +77,17 @@ export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskRes
   let delta = 0;
 
   // Signal-driven threshold adjustments
-  if (active_event_types.includes("NEGATIVE_NEWS_HIGH") || active_event_types.includes("NEGATIVE_NEWS_CRITICAL")) {
+  const hasCriticalSignal = active_signal_severities?.includes("critical") ?? false;
+  const hasHighSignal = active_signal_severities?.includes("high") ?? false;
+
+  if (active_event_types.includes("NEWS_EVENT") && (hasCriticalSignal || hasHighSignal)) {
     delta += 10;
     adjustments.push("NEGATIVE_NEWS (−10pp)");
   }
 
-  if (active_event_types.includes("GOING_CONCERN_WARNING")) {
+  if (active_event_types.includes("GOING_CONCERN")) {
     delta += 15;
-    adjustments.push("GOING_CONCERN_WARNING (−15pp)");
+    adjustments.push("GOING_CONCERN (−15pp)");
   }
 
   if (active_event_types.includes("COVENANT_WAIVER")) {
@@ -132,9 +135,6 @@ export function assessCompositeRisk(input: CompositeRiskInput): CompositeRiskRes
     multiAgent;
 
   // Determine severity — weighted by agent count AND active signal severity
-  const hasCriticalSignal = active_signal_severities?.includes("critical") ?? false;
-  const hasHighSignal = active_signal_severities?.includes("high") ?? false;
-
   let severity: CompositeRiskResult["severity"];
   if (agents_flagging.length >= 3 || (agents_flagging.length >= 2 && hasCriticalSignal)) {
     severity = "critical";

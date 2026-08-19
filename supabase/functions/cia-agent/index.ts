@@ -80,7 +80,7 @@ interface CreditEvent {
 
 interface Customer {
   id: string;
-  name: string;
+  company_name: string;
   company_type: "public" | "private" | "sme";
   credit_limit: number | null;
   current_exposure: number | null;
@@ -180,7 +180,7 @@ function severityRank(s: string): number {
 
 function buildSystemPrompt(customers: Customer[]): string {
   const customerMap = customers.map(c =>
-    `- ${c.name} (id: ${c.id}, type: ${c.company_type}, credit limit: $${c.credit_limit?.toLocaleString() ?? "N/A"}, balance: $${c.current_exposure?.toLocaleString() ?? "0"})`
+    `- ${c.company_name} (id: ${c.id}, type: ${c.company_type}, credit limit: $${c.credit_limit?.toLocaleString() ?? "N/A"}, balance: $${c.current_exposure?.toLocaleString() ?? "0"})`
   ).join("\n");
 
   return `You are the Credit Intelligence Agent (CIA) for CreditPilot, an autonomous B2B trade credit management system.
@@ -219,7 +219,7 @@ function buildUserPrompt(
       const customer = evt.customer_id ? customerById[evt.customer_id] : null;
       return [
         `[${evt.severity.toUpperCase()}] ${evt.event_type}`,
-        `  Customer: ${customer?.name ?? evt.customer_id ?? "Portfolio"}`,
+        `  Customer: ${customer?.company_name ?? evt.customer_id ?? "Portfolio"}`,
         `  Agent: ${evt.source_agent}`,
         `  Title: ${evt.title}`,
         evt.description ? `  Detail: ${evt.description}` : null,
@@ -928,10 +928,11 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
 
   // 3. Load customer context
   const customerIds = [...new Set(events.map((e: any) => e.customer_id).filter(Boolean))] as string[];
-  const { data: customers } = await supabaseClient
+  const { data: customers, error: customersError } = await supabaseClient
     .from("customers")
-    .select("id, name, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_previous_score, payment_on_time_rate, payment_trend, payment_health")
+    .select("id, company_name, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_previous_score, payment_on_time_rate, payment_trend, payment_health")
     .in("id", customerIds);
+  if (customersError) console.error("[cia-agent] customers query failed:", customersError.message);
 
   // Detect rating changes and inject as synthetic events
   const syntheticEvents: Record<string, string[]> = {};
@@ -1019,7 +1020,7 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
         event_type: maxSeverity === "critical" ? "COMPOSITE_RISK_CRITICAL" : "COMPOSITE_RISK_ELEVATED",
         source_agent: "cia-agent",
         severity: maxSeverity as "critical" | "high" | "medium" | "low" | "info",
-        title: `Multi-signal risk: ${customer?.name ?? custId}`,
+        title: `Multi-signal risk: ${customer?.company_name ?? custId}`,
         description: `Signals from ${[...agentsSeen].join(", ")} — ${custEvents.length} events`,
         payload: {
           source_event_ids: custEvents.map((e: any) => e.id),
@@ -1077,9 +1078,9 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
       activeSignalSeverities.push("high");
     }
     const creditScore: number | null = (custEvents[0] as any)?.credit_rating_score ?? null;
-    const arEvent = custEvents.find((e: any) => e.payload?.utilization_pct != null) as any;
-    const utilizationPct: number = arEvent?.payload?.utilization_pct ?? 0;
-    const daysOver90: number = (custEvents.find((e: any) => e.payload?.buckets?.bucket_over_90 != null) as any)?.payload?.buckets?.bucket_over_90 ?? 0;
+    const arEvent = custEvents.find((e: any) => e.payload?.utilization_percent != null) as any;
+    const utilizationPct: number = arEvent?.payload?.utilization_percent ?? 0;
+    const daysOver90: number = (custEvents.find((e: any) => e.payload?.bucket_over_90_usd != null) as any)?.payload?.bucket_over_90_usd ?? 0;
     const currentExposure: number = customer.current_exposure ?? 0;
 
     const onTimeRate: number | undefined = (customer as any)?.payment_on_time_rate ?? undefined;
@@ -1124,7 +1125,7 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
     // Compose and deliver credit action alert to credit team
     const alert = composeTeamsAlert({
       alert_type: "credit_limit_action",
-      company_name: customer.name ?? custId,
+      company_name: customer.company_name ?? custId,
       severity: riskAssessment.severity === "critical" ? "critical" : "high",
       headline: `Credit limit reduction proposed: $${customer.credit_limit.toLocaleString()} → $${proposal.proposed_limit.toLocaleString()}`,
       details: riskAssessment.rationale,
