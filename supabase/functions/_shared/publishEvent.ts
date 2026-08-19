@@ -29,6 +29,7 @@ export interface PublishEventInput {
   source_agent: string;
   correlation_id?: string;
   parent_event_id?: string | null;
+  negative_news_id?: string | null;
   title: string;
   description: string;
   summary?: string;
@@ -127,6 +128,7 @@ export async function publishEvent(input: PublishEventInput): Promise<PublishEve
     source_agent: input.source_agent,
     correlation_id,
     parent_event_id: input.parent_event_id ?? null,
+    negative_news_id: input.negative_news_id ?? null,
     title: input.title,
     description: input.description,
     summary: input.summary ?? null,

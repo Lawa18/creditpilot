@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
         // explicit content_fingerprint dedup check earlier in this loop, so a
         // plain insert is correct here. (An upsert with ON CONFLICT cannot match
         // the partial unique index on content_fingerprint anyway.)
-        const { error: newsError } = await supabase.from("negative_news").insert({
+        const { data: newsRow, error: newsError } = await supabase.from("negative_news").insert({
           customer_id: customer.id,
           headline: article.headline,
           summary: article.summary,
@@ -229,7 +229,7 @@ Deno.serve(async (req) => {
           classification_source: classification.classified_by,
           confidence: classification.confidence,
           provider: article.provider,
-        });
+        }).select("id").single();
 
         if (newsError) {
           console.log(`[news-monitor-agent]   negative_news insert error: ${newsError.message}`);
@@ -251,6 +251,7 @@ Deno.serve(async (req) => {
             scope:        "customer",
             customer_id:  customer.id,
             source_agent: agent_name,
+            negative_news_id: newsRow?.id ?? null,
             title:        `${customer.company_name}: ${article.headline}`,
             description:  article.summary,
             summary:      article.summary,
@@ -400,6 +401,7 @@ async function legacyPath(
         scope:        "customer",
         customer_id:  item.customer_id,
         source_agent: agent_name,
+        negative_news_id: item.id,
         title:        `${cust?.company_name ?? "Unknown"}: ${item.headline}`,
         description:  item.summary ?? "",
         summary:      item.summary ?? `${cust?.company_name ?? "Unknown"}: ${item.headline}`,
