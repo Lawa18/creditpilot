@@ -20,6 +20,16 @@ const AGENT_TABS = [
   { value: "sec_monitor_agent", label: "SEC" },
 ];
 
+function getEventDestination(evt: any): string | null {
+  if (evt.event_type === "NEWS_EVENT" && evt.negative_news_id) {
+    return `/news?event_id=${evt.negative_news_id}`;
+  }
+  if (evt.source_agent === "sec_monitor_agent") {
+    return `/sec?customer_id=${evt.customer_id}`;
+  }
+  return null;
+}
+
 export default function CreditEvents() {
   const [agentFilter, setAgentFilter] = useState("all");
   const navigate = useNavigate();
@@ -129,13 +139,17 @@ export default function CreditEvents() {
         ) : (events ?? []).length === 0 ? (
           <div className="text-center py-12 text-muted-foreground text-sm">No credit events found</div>
         ) : (
-          (events ?? []).map((evt: any) => (
+          (events ?? []).map((evt: any) => {
+            const destination = getEventDestination(evt);
+            return (
             <div
               key={evt.id}
               id={`event-${evt.id}`}
+              onClick={() => destination && navigate(destination)}
               className={cn(
                 "bg-card rounded-xl border p-4",
-                evt.id === highlightedEventId && "ring-2 ring-blue-500"
+                evt.id === highlightedEventId && "ring-2 ring-blue-500",
+                destination && "cursor-pointer hover:bg-secondary/30 transition-colors"
               )}
             >
               <div className="flex items-start justify-between gap-4">
@@ -162,7 +176,8 @@ export default function CreditEvents() {
                 </span>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
