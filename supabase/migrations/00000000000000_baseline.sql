@@ -872,6 +872,8 @@ CREATE TABLE public.negative_news (
     CONSTRAINT negative_news_severity_check CHECK ((severity = ANY (ARRAY['critical'::text, 'high'::text, 'medium'::text, 'low'::text])))
 );
 
+ALTER TABLE credit_events ADD COLUMN IF NOT EXISTS negative_news_id uuid REFERENCES negative_news(id) ON DELETE SET NULL;
+
 
 --
 -- Name: payment_transactions; Type: TABLE; Schema: public; Owner: -
