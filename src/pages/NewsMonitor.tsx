@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { ExternalLink } from "lucide-react";
 
 export default function NewsMonitor() {
   const [search, setSearch] = useState("");
@@ -79,7 +80,15 @@ export default function NewsMonitor() {
                 >
                   <td className="p-3 text-xs text-muted-foreground whitespace-nowrap">{n.news_date}</td>
                   <td className="p-3 font-medium text-xs">{(n.customers as any).company_name}</td>
-                  <td className="p-3 text-xs max-w-xs truncate">{n.headline}</td>
+                  <td className="p-3 text-xs max-w-xs truncate">
+                    {n.url ? (
+                      <a href={n.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-foreground transition-colors">
+                        {n.headline} <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    ) : (
+                      n.headline
+                    )}
+                  </td>
                   <td className="p-3"><Badge variant="secondary" className="text-[10px]">{n.category}</Badge></td>
                   <td className="p-3"><SeverityBadge severity={n.severity} /></td>
                   <td className="p-3 text-xs font-mono">{n.sentiment_score?.toFixed(2)}</td>
