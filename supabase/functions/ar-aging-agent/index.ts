@@ -59,13 +59,14 @@ Deno.serve(async (req) => {
 
   // --- Rate limit check ---
   const cutoff = new Date(Date.now() - RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
-  const { data: recentRuns } = await supabase
+  const { data: recentRuns, error: recentRunsError } = await supabase
     .from("agent_runs")
     .select("id, started_at, status")
     .eq("agent_name", agent_name)
     .gte("started_at", cutoff)
     .in("status", ["completed", "running"])
     .limit(1);
+  if (recentRunsError) console.error("[ar-aging-agent] agent_runs query failed:", recentRunsError.message);
 
   if (recentRuns && recentRuns.length > 0) {
     return new Response(JSON.stringify({
@@ -150,12 +151,13 @@ Deno.serve(async (req) => {
       const creditRatingScore: number | null = custInfo?.credit_rating_score ?? null;
 
       // --- Payment-behaviour refresh (CIA depends on these fields; AR is sole writer) ---
-      const { data: transactions } = await supabase
+      const { data: transactions, error: transactionsError } = await supabase
         .from("payment_transactions")
         .select("payment_date, days_to_pay, days_early_late, on_time, amount:amount_paid")
         .eq("customer_id", customerId)
         .order("payment_date", { ascending: false })
         .limit(24);
+      if (transactionsError) console.error("[ar-aging-agent] payment_transactions query failed:", transactionsError.message);
 
       const behaviour = analysePaymentBehaviour(transactions ?? []);
 
@@ -263,10 +265,11 @@ Deno.serve(async (req) => {
     let overdueFound = 0;
     if (overdueByCustomer.size > 0) {
       const overdueIds = [...overdueByCustomer.keys()];
-      const { data: overdueCusts } = await supabase
+      const { data: overdueCusts, error: overdueCustsError } = await supabase
         .from("customers")
         .select("id, company_name")
         .in("id", overdueIds);
+      if (overdueCustsError) console.error("[ar-aging-agent] customers lookup failed:", overdueCustsError.message);
       const nameById = new Map((overdueCusts ?? []).map((c: any) => [c.id as string, c.company_name as string]));
 
       for (const [custId, buckets] of overdueByCustomer) {
