@@ -150,16 +150,17 @@ Deno.serve(async (req) => {
 
         for (const filing of filings) {
           // Dedup: accession_number is globally unique in EDGAR
-          const { data: existing } = await supabase
+          const { data: existing, error: existingError } = await supabase
             .from("sec_filings")
             .select("id")
             .eq("accession_number", filing.accession_number)
             .limit(1);
+          if (existingError) console.error("[sec-monitor-agent] sec_filings dedup check failed:", existingError.message);
 
           if (existing && existing.length > 0) continue;
 
           // Insert to sec_filings (ON CONFLICT DO NOTHING via unique index)
-          await supabase.from("sec_filings").insert({
+          const { error: insertError } = await supabase.from("sec_filings").insert({
             customer_id:      customerId,
             filing_type:      filing.filing_type,
             filing_date:      filing.filing_date,
@@ -172,6 +173,11 @@ Deno.serve(async (req) => {
             agent_name,
             is_demo:          DEMO_MODE,
           });
+
+          if (insertError) {
+            console.error(`[sec-monitor-agent] sec_filings insert failed for ${companyName} ${filing.accession_number}:`, insertError.message);
+            continue;
+          }
 
           if (filing.risk_signals.length === 0) continue;
 
