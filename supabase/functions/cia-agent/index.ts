@@ -91,7 +91,6 @@ interface AgentRun {
   agent_name: string;
   status: string;
   completed_at: string | null;
-  created_at: string;
 }
 
 interface CIARequest {
@@ -452,10 +451,11 @@ async function fetchRelevantData(
       let custIds: string[] = [];
       if (words.length > 0) {
         const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
-        const { data: matched } = await supabase
+        const { data: matched, error: matchedErr } = await supabase
           .from("customers")
           .select("id")
           .or(nameFilter);
+        if (matchedErr) console.error("customers matched error:", matchedErr.message);
         custIds = (matched ?? []).map((c: any) => c.id);
       }
 
@@ -474,10 +474,11 @@ async function fetchRelevantData(
       const resultCustIds = [...new Set((data ?? []).map((inv: any) => inv.customer_id))];
       let customerMap: Record<string, string> = {};
       if (resultCustIds.length > 0) {
-        const { data: custData } = await supabase
+        const { data: custData, error: custDataErr } = await supabase
           .from("customers")
           .select("id, company_name")
           .in("id", resultCustIds);
+        if (custDataErr) console.error("customers lookup error:", custDataErr.message);
         customerMap = Object.fromEntries((custData ?? []).map((c: any) => [c.id, c.company_name]));
       }
 
@@ -502,10 +503,11 @@ async function fetchRelevantData(
       let custIds: string[] = [];
       if (words.length > 0) {
         const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
-        const { data: matched } = await supabase
+        const { data: matched, error: matchedErr } = await supabase
           .from("customers")
           .select("id")
           .or(nameFilter);
+        if (matchedErr) console.error("customers matched error:", matchedErr.message);
         custIds = (matched ?? []).map((c: any) => c.id);
       }
 
@@ -522,10 +524,11 @@ async function fetchRelevantData(
       const resultCustIds = [...new Set((data ?? []).map((p: any) => p.customer_id))];
       let customerMap: Record<string, string> = {};
       if (resultCustIds.length > 0) {
-        const { data: custData } = await supabase
+        const { data: custData, error: custDataErr } = await supabase
           .from("customers")
           .select("id, company_name")
           .in("id", resultCustIds);
+        if (custDataErr) console.error("customers lookup error:", custDataErr.message);
         customerMap = Object.fromEntries((custData ?? []).map((c: any) => [c.id, c.company_name]));
       }
 
@@ -546,7 +549,8 @@ async function fetchRelevantData(
 
       if (keywords.length > 0) {
         const orFilter = keywords.map(kw => `headline.ilike.%${kw}%`).join(",");
-        const { data: filtered } = await baseQuery().or(orFilter);
+        const { data: filtered, error: filteredErr } = await baseQuery().or(orFilter);
+        if (filteredErr) console.error("negative_news filter error:", filteredErr.message);
         if (filtered && filtered.length > 0) {
           results.negative_news = filtered;
           results.negative_news_matched = filtered;
@@ -879,12 +883,13 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
   }
 
   // 1. Check cache TTL per agent
-  const { data: recentRuns } = await supabaseClient
+  const { data: recentRuns, error: recentRunsError } = await supabaseClient
     .from("agent_runs")
-    .select("id, agent_name, status, completed_at, created_at")
+    .select("id, agent_name, status, completed_at")
     .in("agent_name", ["ar-aging-agent", "news-monitor-agent", "sec-monitor-agent"])
     .eq("status", "completed")
     .order("completed_at", { ascending: false });
+  if (recentRunsError) console.error("[cia-agent] agent_runs query failed:", recentRunsError.message);
 
   const latestByAgent: Record<string, AgentRun> = {};
   for (const run of (recentRuns ?? [])) {
