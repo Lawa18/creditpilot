@@ -66,13 +66,14 @@ Deno.serve(async (req) => {
   // ── Rate limit check ────────────────────────────────────────────────────────
 
   const cutoff = new Date(Date.now() - RATE_LIMIT_MINUTES * 60 * 1000).toISOString();
-  const { data: recentRuns } = await supabase
+  const { data: recentRuns, error: recentRunsError } = await supabase
     .from("agent_runs")
     .select("id, started_at, status")
     .eq("agent_name", agent_name)
     .gte("started_at", cutoff)
     .in("status", ["completed", "running"])
     .limit(1);
+  if (recentRunsError) console.error("[news-monitor-agent] agent_runs query failed:", recentRunsError.message);
 
   if (recentRuns && recentRuns.length > 0) {
     return new Response(
@@ -355,11 +356,12 @@ async function legacyPath(
   agent_name: string,
   headers: Record<string, string>
 ): Promise<Response> {
-  const { data: news } = await supabase
+  const { data: news, error: newsError } = await supabase
     .from("negative_news")
     .select("*, customers(company_name)")
     .eq("reviewed", false)
     .order("news_date", { ascending: false });
+  if (newsError) console.error("[news-monitor-agent] legacyPath negative_news query failed:", newsError.message);
 
   const scanned = news?.length ?? 0;
   const critical = (news ?? []).filter(
