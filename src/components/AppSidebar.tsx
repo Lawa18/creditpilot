@@ -26,7 +26,7 @@ export function AppSidebar() {
   return (
     <aside className="w-64 min-h-screen bg-sidebar flex flex-col shrink-0">
       <div className="p-5 border-b border-sidebar-border">
-        <h1 className="text-sidebar-foreground font-semibold text-base">My Credit Pilot</h1>
+        <h1 className="text-sidebar-foreground font-semibold text-base">CreditPilot</h1>
       </div>
 
       <nav className="flex-1 p-3 space-y-0.5">

@@ -22,13 +22,13 @@ export function AboutDialog() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <Shield className="h-5 w-5 text-primary" />
-            About My Credit Pilot
+            About CreditPilot
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
           <p>
-            <span className="text-foreground font-medium">MyCreditPilot</span> is an open-source collection of autonomous AI agents that handle the day-to-day work of B2B credit management: credit limit adjustments, AR aging reviews, news monitoring, SEC filing alerts, and more.
+            <span className="text-foreground font-medium">CreditPilot</span> is an open-source collection of autonomous AI agents that handle the day-to-day work of B2B credit management: credit limit adjustments, AR aging reviews, news monitoring, SEC filing alerts, and more.
           </p>
 
           <p>
@@ -41,7 +41,7 @@ export function AboutDialog() {
             <p className="text-foreground font-medium">
               Want to run it on your own data? Deploy it yourself →{" "}
               <a
-                href="https://github.com/larsewallin/mycreditpilot"
+                href="https://github.com/larsewallin/creditpilot"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-primary hover:underline"
