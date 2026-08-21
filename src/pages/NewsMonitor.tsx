@@ -9,6 +9,7 @@ import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { ExternalLink } from "lucide-react";
+import { DemoDataNotice } from "@/components/DemoDataNotice";
 
 export default function NewsMonitor() {
   const [search, setSearch] = useState("");
@@ -49,6 +50,8 @@ export default function NewsMonitor() {
           </p>
         </div>
       </div>
+
+      <DemoDataNotice message="These are fictional headlines generated for illustration, not real published articles. No external links exist because nothing was actually published." />
 
       {/* All Articles Table */}
       <div>

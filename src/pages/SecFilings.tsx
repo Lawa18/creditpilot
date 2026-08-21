@@ -6,6 +6,7 @@ import { ExternalLink, ShieldAlert } from "lucide-react";
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { DemoDataNotice } from "@/components/DemoDataNotice";
 
 export default function SecFilings() {
   const [searchParams] = useSearchParams();
@@ -64,6 +65,7 @@ export default function SecFilings() {
           <h1 className="text-xl font-semibold text-foreground">SEC Filings</h1>
           <p className="text-xs text-muted-foreground mt-1">Per-company filing history and monitoring status — open one from a Credit Events source card for context, or browse below.</p>
         </div>
+        <DemoDataNotice message="CIK numbers and filing links are real and point to actual SEC EDGAR pages. The risk signals and findings shown here are fabricated for this demo and were not found in those filings." />
         <div className="flex items-center justify-center h-64 border border-dashed rounded-xl text-muted-foreground text-sm">
           No monitored customers found. Agents will populate this automatically.
         </div>
@@ -77,6 +79,8 @@ export default function SecFilings() {
         <h1 className="text-xl font-semibold text-foreground">SEC Filings</h1>
         <p className="text-xs text-muted-foreground mt-1">Per-company filing history and monitoring status — open one from a Credit Events source card for context, or browse below.</p>
       </div>
+
+      <DemoDataNotice message="CIK numbers and filing links are real and point to actual SEC EDGAR pages. The risk signals and findings shown here are fabricated for this demo and were not found in those filings." />
 
       <div className="space-y-4">
         {(monitoring ?? []).map((d: any) => {

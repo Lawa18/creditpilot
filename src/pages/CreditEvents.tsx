@@ -12,6 +12,7 @@ import { AlertTriangle } from "lucide-react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { DemoDataNotice } from "@/components/DemoDataNotice";
 
 const AGENT_TABS = [
   { value: "all", label: "All" },
@@ -92,6 +93,8 @@ export default function CreditEvents() {
           Unified signal log from all monitoring agents.
         </p>
       </div>
+
+      <DemoDataNotice message="All events, companies, and figures below are fictional, generated for illustration only. Not real credit signals." />
 
       {filterCustomerId && (
         <Badge variant="secondary" className="text-xs gap-1.5 w-fit">
