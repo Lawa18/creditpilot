@@ -921,3 +921,22 @@ User caught via a live CIA answer: pre-petition invoices (Proterra, Yellow, Rite
 Fixed by extending the existing system rather than building something new: populated demo_days_offset for all 10 pre-petition invoices with fixed, staggered values (95-140 days), preserving the existing narrative structure (the three scenario='bankruptcy' customers -- Proterra, Yellow, Rite Aid -- staggered deeper than Spirit Airlines' separate pre-petition-AR signal on top of its negative_news scenario). All land solidly and permanently in the 90+ aging bucket. This required zero code changes -- fn_reset_demo_invoice_dates() already updates any row WHERE demo_days_offset IS NOT NULL; these rows were simply never populated. Purely a data change, confirmed zero effect on any real production deployment (this function is only ever called from DEMO_MODE-gated frontend code).
 
 Also re-dumped the full invoices table into seed.sql (160 rows) to capture both this fix and the routine full date-refresh from calling fn_reset_demo_invoice_dates(). Commit 0abdeb4. Verified live: re-asked the exact question that surfaced this, confirmed absurd day counts are gone. Harness 8/8.
+
+---
+
+## CIA invoices fallback query bug (paid invoices crowding out real overdue AR) + systematic check of all 6 fetch branches (2026-08-22)
+
+User caught via a live CIA answer: "give me an update on the AR aging report" returned "all invoices paid except Proterra," flatly contradicting the real portfolio (~$16M genuinely overdue). Root cause: the invoices fetch's no-named-customer fallback (`q.lt("due_date", todayStr).order("due_date", ascending: true).limit(20)`) never excluded paid/written_off statuses, and sorted oldest-due-date-first. Confirmed live: the top 20 results by this exact query were 18 paid invoices + 2 Proterra pre_petition rows -- zero genuinely current/overdue invoices ever surfaced. Not a hallucination -- the CIA accurately described the (wrong) data it was given.
+
+Fixed: added `.not("status", "in", "(paid,written_off)")` to this fallback branch only (the named-customer branch was already correct). pre_petition invoices remain included (legitimately relevant to a general overdue question). Commit 41f5862. Harness 8/8.
+
+**Systematically checked all 6 of cia-agent's table-fetch branches for the same shape of bug** (a no-named-customer fallback returning a limited, sorted slice without excluding irrelevant/terminal rows), not just assuming the fix was isolated:
+
+- credit_events: clean -- orders by severity_score DESC then created_at DESC, no settled/terminal status concept applies.
+- customers: clean -- generic fallback uses fn_rank_portfolio_risk() (the properly-designed B5 ranking function), not a naive limit/sort.
+- invoices: was broken, now fixed (above).
+- payment_transactions: clean -- orders by payment_date DESC (most recent first, correct direction), no status concept (every row is a completed transaction).
+- negative_news: clean -- orders by news_date DESC, no status concept.
+- sec_filings: clean -- orders by filing_date DESC, no status concept.
+
+invoices was the only table with this specific risk, for a specific reason: it's the only one of the 6 where rows carry a genuine settled/terminal state (paid, written_off) requiring deliberate exclusion -- every other table's rows are either permanent facts or already correctly ordered so the most relevant result surfaces first regardless of any filtering.
