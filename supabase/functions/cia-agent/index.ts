@@ -379,11 +379,9 @@ async function fetchRelevantData(
       if (keywords.length > 0) {
         const { data: filtered, error: filteredErr } = await baseQuery().or(orFilter);
         if (filteredErr) console.error("credit_events filter error:", filteredErr.message);
-        if (filtered && filtered.length > 0) {
+        if (filtered && filtered.length >= 2) {
           // Genuinely keyword-matched events — these are the attributable sources.
           results.credit_events_matched = filtered;
-        }
-        if (filtered && filtered.length >= 2) {
           results.credit_events = filtered;
           return;
         }
