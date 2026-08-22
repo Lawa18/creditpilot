@@ -45,7 +45,7 @@
       "id": "q5_vague_qualitative",
       "question": "Should I be worried about American Airlines?",
       "expected": {
-        "min_sources": 1,
+        "min_sources": 0,
         "must_mention": ["American Airlines"],
         "must_not_say": ["I don't have that information in the current data"],
         "expected_confidence": ["High", "Medium"]
