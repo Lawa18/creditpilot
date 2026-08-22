@@ -467,7 +467,7 @@ async function fetchRelevantData(
         .limit(20);
 
       if (custIds.length > 0) q = q.in("customer_id", custIds);
-      else q = q.lt("due_date", todayStr);
+      else q = q.lt("due_date", todayStr).not("status", "in", "(paid,written_off)");
 
       const { data } = await q;
 
