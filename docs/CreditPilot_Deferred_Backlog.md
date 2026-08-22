@@ -940,3 +940,19 @@ Fixed: added `.not("status", "in", "(paid,written_off)")` to this fallback branc
 - sec_filings: clean -- orders by filing_date DESC, no status concept.
 
 invoices was the only table with this specific risk, for a specific reason: it's the only one of the 6 where rows carry a genuine settled/terminal state (paid, written_off) requiring deliberate exclusion -- every other table's rows are either permanent facts or already correctly ordered so the most relevant result surfaces first regardless of any filtering.
+
+---
+
+## Strategic notes from user, captured for future planning (2026-08-22) -- not acted on this session
+
+User shared priorities while continuing the live demo review, explicitly framed as important context to preserve, not immediate work:
+
+**1. Invoice lifecycle end-to-end (get data, read, update, display).** Currently: the only ingestion path is manual CSV upload, which fully *replaces* a customer's open/overdue invoices per the locked Input Contract (no incremental update, no single-invoice edit). No payment-recording UI exists -- payment behaviour is inferred from AR snapshots over time (analyse-payment-behaviour skill), never entered directly. Reading/display is well covered (AR Aging table, Customer detail Invoices tab, CIA). Clarified by user in follow-up: CSV upload is not necessarily a gap needing replacement -- it's a viable long-term ingestion mechanism, since it can be automated on the customer's own end (e.g. a scheduled export from their ERP). The real open question is specifically the update/payment-recording story, not the ingestion mechanism itself. Connects to the ERP-integration vision already logged elsewhere in this backlog (internal_customer_code as the future ERP-sync key).
+
+**2. Customer data table completeness for future KYC/onboarding/fraud agents.** Confirmed real gaps in the current customers schema: no structured street address (headquarters is free-form display text only, not parseable), no website/domain field, no legal-entity-name vs. trade-name distinction, no tax ID/EIN, no industry classification codes (NAICS/SIC -- sector/industry are both free text). User explicitly said this is V2-after-launch scope, but wants it flagged as a real priority for that phase, not an afterthought -- likely worth designing alongside the already-logged "Add Customer form" work (its own dedicated session, logged 2026-08-16) so the two aren't designed independently and then need reconciling.
+
+**3. "The Base" must be solid before building more agents on top.** User's own framing for the priority that should govern near-term work: the core data/agent infrastructure (schema, identifier strategy, event taxonomy, agent contract pattern) needs to be genuinely trustworthy before KYC/onboarding/fraud/credit-check agents get built on it -- otherwise those future agents inherit and compound whatever's still wrong in the foundation. This is explicitly the principle behind this entire session's work (schema drift fixes, customer_identifiers, the cia-agent decisioning pipeline fix, the systematic error-handling sweep) -- worth keeping as the explicit lens for prioritization going forward, not just an implicit pattern.
+
+**4. Customer profile fields -- elevated priority, concrete next step.** User will provide a draft template of desired customer profile fields (addressing gap #2 above) for review and feedback, once the current CIA/dashboard review is complete. Not yet provided as of this note.
+
+No action taken this session on points 1-3 -- captured for future planning only, at user's explicit request to continue live testing instead.
