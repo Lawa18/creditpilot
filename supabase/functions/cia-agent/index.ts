@@ -343,7 +343,7 @@ async function fetchRelevantData(
   // Build keyword filter for text search
   const keywords = question
     .split(/\s+/)
-    .map(w => w.toLowerCase().replace(/[?!.,'"]/g, ""))
+    .map(w => w.toLowerCase().replace(/'s$/, "").replace(/[?!.,'"]/g, ""))
     .filter(w => w.length > 4 && !KEYWORD_STOPLIST.has(w))
     .slice(0, 5);
 
