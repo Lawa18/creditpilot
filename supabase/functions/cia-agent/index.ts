@@ -314,6 +314,18 @@ interface RetrievedData {
   sec_filings: any[];
 }
 
+// Lookup entry for a single tagged record ([C3], [E1], etc.) built while assembling
+// contextParts, used to mechanically verify which tags the model actually cites.
+interface TagLookupEntry {
+  table: "customers" | "invoices" | "payment_transactions" | "negative_news" | "sec_filings" | "credit_events";
+  id: string | null;
+  customer_name: string | null;
+  event_type: string | null;
+  severity: string | null;
+  date: string | null;
+  agent: string | null;
+}
+
 async function fetchRelevantData(
   supabase: any,
   question: string,
@@ -669,40 +681,104 @@ serve(async (req: Request) => {
     // in Claude's response (quotes, backslashes, newlines in DB fields break output JSON)
     const contextParts: string[] = [];
 
+    // Populated alongside contextParts: tag -> record, so citations the model makes
+    // inline (e.g. [E3]) can be mechanically verified against real provided rows.
+    const tagMap = new Map<string, TagLookupEntry>();
+
     if (data.customers.length > 0) {
-      contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any) =>
-        `- ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, ${c.credit_rating_score != null ? `credit_score=${c.credit_rating_score}/100 (${sanitize(c.credit_rating_raw) || "N/A"} from ${sanitize(c.credit_rating_source) || "N/A"})` : "credit_score=NR (No Rating, provider=N/A)"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}]${c.is_high_risk ? ', RISK_FLAG=HIGH' : ''})`
-      ).join("\n"));
+      contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any, i: number) => {
+        const tag = `C${i + 1}`;
+        tagMap.set(tag, {
+          table: "customers",
+          id: c.id ?? null,
+          customer_name: c.company_name ?? null,
+          event_type: null,
+          severity: null,
+          date: null,
+          agent: null,
+        });
+        return `- [${tag}] ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, ${c.credit_rating_score != null ? `credit_score=${c.credit_rating_score}/100 (${sanitize(c.credit_rating_raw) || "N/A"} from ${sanitize(c.credit_rating_source) || "N/A"})` : "credit_score=NR (No Rating, provider=N/A)"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}]${c.is_high_risk ? ', RISK_FLAG=HIGH' : ''})`;
+      }).join("\n"));
     }
 
     if (data.invoices.length > 0) {
-      contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any) =>
-        `- ${sanitize(inv.company_name)}: invoice ${sanitize(inv.invoice_number)}, amount=$${inv.invoice_amount?.toLocaleString()}, outstanding=$${inv.outstanding_amount?.toLocaleString()}, due=${inv.due_date}, status=${inv.status}, days_overdue=${inv.days_overdue}`
-      ).join("\n"));
+      contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any, i: number) => {
+        const tag = `I${i + 1}`;
+        tagMap.set(tag, {
+          table: "invoices",
+          id: inv.id ?? null,
+          customer_name: inv.company_name ?? null,
+          event_type: null,
+          severity: null,
+          date: inv.due_date ?? null,
+          agent: null,
+        });
+        return `- [${tag}] ${sanitize(inv.company_name)}: invoice ${sanitize(inv.invoice_number)}, amount=$${inv.invoice_amount?.toLocaleString()}, outstanding=$${inv.outstanding_amount?.toLocaleString()}, due=${inv.due_date}, status=${inv.status}, days_overdue=${inv.days_overdue}`;
+      }).join("\n"));
     }
 
     if (data.payment_transactions.length > 0) {
-      contextParts.push("## PAYMENT TRANSACTIONS TABLE\n" + data.payment_transactions.map((p: any) =>
-        `- ${sanitize(p.company_name)}: paid $${p.amount_paid?.toLocaleString()} on ${p.payment_date}, days_to_pay=${p.days_to_pay}, days_early_late=${p.days_early_late} (${p.days_early_late > 0 ? "late" : p.days_early_late < 0 ? "early" : "on time"}), method=${p.payment_method}`
-      ).join("\n"));
+      contextParts.push("## PAYMENT TRANSACTIONS TABLE\n" + data.payment_transactions.map((p: any, i: number) => {
+        const tag = `P${i + 1}`;
+        tagMap.set(tag, {
+          table: "payment_transactions",
+          id: null,
+          customer_name: p.company_name ?? null,
+          event_type: null,
+          severity: null,
+          date: p.payment_date ?? null,
+          agent: null,
+        });
+        return `- [${tag}] ${sanitize(p.company_name)}: paid $${p.amount_paid?.toLocaleString()} on ${p.payment_date}, days_to_pay=${p.days_to_pay}, days_early_late=${p.days_early_late} (${p.days_early_late > 0 ? "late" : p.days_early_late < 0 ? "early" : "on time"}), method=${p.payment_method}`;
+      }).join("\n"));
     }
 
     if (data.negative_news.length > 0) {
-      contextParts.push("## NEGATIVE NEWS TABLE\n" + data.negative_news.map((n: any) =>
-        `- ${sanitize(n.customers?.company_name) || "Unknown"}: ${sanitize(n.headline)} (${sanitize(n.source)}, ${n.news_date}), severity=${n.severity}, sentiment=${n.sentiment_score}`
-      ).join("\n"));
+      contextParts.push("## NEGATIVE NEWS TABLE\n" + data.negative_news.map((n: any, i: number) => {
+        const tag = `N${i + 1}`;
+        tagMap.set(tag, {
+          table: "negative_news",
+          id: n.id ?? null,
+          customer_name: n.customers?.company_name ?? null,
+          event_type: "NEGATIVE_NEWS",
+          severity: n.severity ?? null,
+          date: n.news_date ? String(n.news_date).slice(0, 10) : null,
+          agent: "news_monitor_agent",
+        });
+        return `- [${tag}] ${sanitize(n.customers?.company_name) || "Unknown"}: ${sanitize(n.headline)} (${sanitize(n.source)}, ${n.news_date}), severity=${n.severity}, sentiment=${n.sentiment_score}`;
+      }).join("\n"));
     }
 
     if (data.sec_filings.length > 0) {
-      contextParts.push("## SEC FILINGS TABLE\n" + data.sec_filings.map((f: any) =>
-        `- ${sanitize(f.customers?.company_name) || "Unknown"}: ${f.filing_type} filed ${f.filing_date}, risk_signals=[${(f.risk_signals ?? []).map(sanitize).join(", ")}]`
-      ).join("\n"));
+      contextParts.push("## SEC FILINGS TABLE\n" + data.sec_filings.map((f: any, i: number) => {
+        const tag = `F${i + 1}`;
+        tagMap.set(tag, {
+          table: "sec_filings",
+          id: f.customer_id ?? null,
+          customer_name: f.customers?.company_name ?? null,
+          event_type: f.filing_type ?? "SEC_FILING",
+          severity: null,
+          date: f.filing_date ? String(f.filing_date).slice(0, 10) : null,
+          agent: "sec_monitor_agent",
+        });
+        return `- [${tag}] ${sanitize(f.customers?.company_name) || "Unknown"}: ${f.filing_type} filed ${f.filing_date}, risk_signals=[${(f.risk_signals ?? []).map(sanitize).join(", ")}]`;
+      }).join("\n"));
     }
 
     if (data.credit_events.length > 0) {
-      contextParts.push("## CREDIT EVENTS TABLE\n" + data.credit_events.map((e: any) =>
-        `- ${sanitize(e.customers?.company_name) || "Portfolio"}: ${e.event_type} (${e.severity}) from ${e.source_agent} on ${e.created_at?.split("T")[0]} — ${sanitize(e.title)}${e.description ? ": " + sanitize(e.description) : ""}`
-      ).join("\n"));
+      contextParts.push("## CREDIT EVENTS TABLE\n" + data.credit_events.map((e: any, i: number) => {
+        const tag = `E${i + 1}`;
+        tagMap.set(tag, {
+          table: "credit_events",
+          id: e.id ?? null,
+          customer_name: e.customers?.company_name ?? null,
+          event_type: e.event_type ?? null,
+          severity: e.severity ?? null,
+          date: e.created_at ? String(e.created_at).slice(0, 10) : null,
+          agent: e.source_agent ?? null,
+        });
+        return `- [${tag}] ${sanitize(e.customers?.company_name) || "Portfolio"}: ${e.event_type} (${e.severity}) from ${e.source_agent} on ${e.created_at?.split("T")[0]} — ${sanitize(e.title)}${e.description ? ": " + sanitize(e.description) : ""}`;
+      }).join("\n"));
     }
 
     const context = contextParts.join("\n\n");
@@ -717,13 +793,35 @@ serve(async (req: Request) => {
       const answerMessage = await anthropic.messages.create({
         model,
         max_tokens: maxTokens,
-        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Cite every fact with its source in parentheses e.g. (customers table), (credit_events: NEGATIVE_NEWS_HIGH). Be specific with exact amounts, dates, and percentages. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
+        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
         messages: [{
           role: "user",
           content: `Question: ${question}\n\nData:\n${context || "No relevant data found."}`,
         }],
       });
       const answerText = extractText(answerMessage);
+
+      // ── Mechanical citation verification: extract [tags] the model cited, keep
+      // only those matching a real record in tagMap, then strip all bracket tags
+      // (valid or not) from the text shown to the user. ──────────────────────────
+      const citedTags = new Set<string>();
+      const bracketPattern = /\[([^\]]+)\]/g;
+      let bracketMatch: RegExpExecArray | null;
+      while ((bracketMatch = bracketPattern.exec(answerText)) !== null) {
+        for (const piece of bracketMatch[1].split(",")) {
+          const tag = piece.trim();
+          if (/^[CIPNFE]\d+$/.test(tag)) citedTags.add(tag);
+        }
+      }
+      const verifiedTags = [...citedTags].filter(t => tagMap.has(t));
+
+      const cleanAnswerText = answerText
+        .replace(/\[([^\]]+)\]/g, (full, inner) =>
+          inner.split(",").every((p: string) => /^[CIPNFE]\d+$/.test(p.trim())) ? "" : full
+        )
+        .replace(/\s+([.,;:!?])/g, "$1")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim();
 
       // ── Call 2: structured metadata only — small JSON, no embedded answer ───
       let meta: { confidence: string; confidence_reason: string } = {
@@ -750,7 +848,7 @@ Do not penalize for: using multiple tables, citing credit_events when available,
 Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence stating which rubric tier applies and why"}`,
           messages: [{
             role: "user",
-            content: `Based on this answer and data, provide confidence and sources.\n\nAnswer: ${answerText}\n\nData:\n${context}`,
+            content: `Based on this answer and data, provide confidence and sources.\n\nAnswer: ${cleanAnswerText}\n\nData:\n${context}`,
           }],
         });
         const metaText = extractText(metaMessage);
@@ -775,7 +873,7 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
           system: "Generate exactly 3 short follow-up questions a credit manager would ask after reading this answer. Return ONLY a JSON array of 3 strings. Questions must be specific to the companies and issues mentioned.",
           messages: [{
             role: "user",
-            content: `Answer just given: ${answerText.slice(0, 500)}\n\nGenerate 3 follow-up questions.`,
+            content: `Answer just given: ${cleanAnswerText.slice(0, 500)}\n\nGenerate 3 follow-up questions.`,
           }],
         });
         const followUpText = extractText(followUpMessage);
@@ -786,52 +884,31 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
         // keep fallback suggestions
       }
 
-      // Build sources deterministically from the rows that fed the answer — never from
-      // the LLM (which intermittently returned empty arrays or fabricated events).
-      // Build sources deterministically from fetched credit_events only.
+      // Build sources deterministically from mechanically-verified inline citation
+      // tags — a tag only survives if the model actually cited it AND it corresponds
+      // to a real record provided in the context (never from LLM self-report alone).
+      // Only credit_events/negative_news/sec_filings produce a source card; customers/
+      // invoices/payment_transactions tags are verified but have no source_type the
+      // frontend understands, matching the existing empty-sources UI for portfolio-
+      // level answers.
       const sources: Array<{event_id: string; source_type: "credit_events" | "negative_news" | "sec_filings"; customer_name: string; event_type: string | null; severity: string | null; date: string | null; agent: string | null}> = [];
-      for (const ev of (data.credit_events_matched ?? [])) {
-        const custName = (ev as any).customers?.company_name ?? null;
-        if (!custName) continue;
+      for (const tag of verifiedTags) {
+        const entry = tagMap.get(tag)!;
+        if (entry.table !== "credit_events" && entry.table !== "negative_news" && entry.table !== "sec_filings") continue;
+        if (!entry.id || !entry.customer_name) continue;
         sources.push({
-          event_id: (ev as any).id,
-          source_type: "credit_events",
-          customer_name: custName,
-          event_type: (ev as any).event_type ?? null,
-          severity: (ev as any).severity ?? null,
-          date: (ev as any).created_at ? String((ev as any).created_at).slice(0, 10) : null,
-          agent: (ev as any).source_agent ?? null,
-        });
-      }
-      for (const n of (data.negative_news_matched ?? [])) {
-        const custName = (n as any).customers?.company_name ?? null;
-        if (!custName) continue;
-        sources.push({
-          event_id: (n as any).id,
-          source_type: "negative_news",
-          customer_name: custName,
-          event_type: "NEGATIVE_NEWS",
-          severity: (n as any).severity ?? null,
-          date: (n as any).news_date ? String((n as any).news_date).slice(0, 10) : null,
-          agent: "news_monitor_agent",
-        });
-      }
-      for (const f of (data.sec_filings_matched ?? [])) {
-        const custName = (f as any).customers?.company_name ?? null;
-        if (!custName) continue;
-        sources.push({
-          event_id: (f as any).customer_id,
-          source_type: "sec_filings",
-          customer_name: custName,
-          event_type: (f as any).filing_type ?? "SEC_FILING",
-          severity: null,
-          date: (f as any).filing_date ? String((f as any).filing_date).slice(0, 10) : null,
-          agent: "sec_monitor_agent",
+          event_id: entry.id,
+          source_type: entry.table,
+          customer_name: entry.customer_name,
+          event_type: entry.event_type,
+          severity: entry.severity,
+          date: entry.date,
+          agent: entry.agent,
         });
       }
 
       return jsonRes({
-        answer: answerText,
+        answer: cleanAnswerText,
         sources,
         confidence: meta.confidence,
         confidence_reason: meta.confidence_reason,
