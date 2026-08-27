@@ -686,7 +686,10 @@ serve(async (req: Request) => {
     const tagMap = new Map<string, TagLookupEntry>();
 
     if (data.customers.length > 0) {
-      contextParts.push("## CUSTOMERS TABLE\n" + data.customers.map((c: any, i: number) => {
+      // Single pass: assign each customer's tag once, keep the customer object and
+      // rendered line together so the high-risk summary below can reuse the exact
+      // same tag rather than minting a second one for the same row.
+      const customerLines = data.customers.map((c: any, i: number) => {
         const tag = `C${i + 1}`;
         tagMap.set(tag, {
           table: "customers",
@@ -697,8 +700,27 @@ serve(async (req: Request) => {
           date: null,
           agent: null,
         });
-        return `- [${tag}] ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, ${c.credit_rating_score != null ? `credit_score=${c.credit_rating_score}/100 (${sanitize(c.credit_rating_raw) || "N/A"} from ${sanitize(c.credit_rating_source) || "N/A"})` : "credit_score=NR (No Rating, provider=N/A)"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}]${c.is_high_risk ? ', RISK_FLAG=HIGH' : ''})`;
-      }).join("\n"));
+        return {
+          tag,
+          customer: c,
+          line: `- [${tag}] ${sanitize(c.company_name)} (type:${sanitize(c.company_type)}, credit_limit=$${c.credit_limit?.toLocaleString()}, balance=$${c.current_exposure?.toLocaleString()}, utilization=${c.credit_limit ? Math.round(c.current_exposure / c.credit_limit * 100) : "N/A"}%, ${c.credit_rating_score != null ? `credit_score=${c.credit_rating_score}/100 (${sanitize(c.credit_rating_raw) || "N/A"} from ${sanitize(c.credit_rating_source) || "N/A"})` : "credit_score=NR (No Rating, provider=N/A)"}, scenario=${sanitize(c.scenario) || "N/A"}, payment_health=${sanitize(c.payment_health) || "unknown"}, risk_tags=[${(c.risk_tags ?? []).map(sanitize).join(", ")}]${c.is_high_risk ? ', RISK_FLAG=HIGH' : ''})`,
+        };
+      });
+
+      // Structural reinforcement of the RISK_FLAG=HIGH prompt instruction: an unmissable,
+      // dedicated section pushed first, listing the locked V1 high-risk set by itself so
+      // it can't get lost in a long customer table or out-competed by credit_events content.
+      const highRiskLines = customerLines.filter(({ customer }) => customer.is_high_risk);
+      if (highRiskLines.length > 0) {
+        contextParts.push(
+          `## OFFICIAL HIGH-RISK CUSTOMER LIST (business-locked ranking — the complete, authoritative answer to any "highest risk" / "most at-risk" portfolio-wide question)\n` +
+          highRiskLines.map(({ tag, customer: c }) =>
+            `- ${sanitize(c.company_name)} [${tag}] (credit_score=${c.credit_rating_score ?? "NR"}/100, scenario=${sanitize(c.scenario) || "N/A"})`
+          ).join("\n")
+        );
+      }
+
+      contextParts.push("## CUSTOMERS TABLE\n" + customerLines.map(({ line }) => line).join("\n"));
     }
 
     if (data.invoices.length > 0) {
