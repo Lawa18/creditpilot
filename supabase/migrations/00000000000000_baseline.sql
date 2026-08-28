@@ -715,6 +715,10 @@ CREATE TABLE public.customer_identifiers (
     CONSTRAINT customer_identifiers_source_check CHECK ((source = ANY (ARRAY['manual'::text, 'edgar_verified'::text, 'customer_supplied'::text, 'duns_lookup'::text])))
 );
 
+ALTER TABLE customer_identifiers DROP CONSTRAINT IF EXISTS customer_identifiers_id_type_check;
+ALTER TABLE customer_identifiers ADD CONSTRAINT customer_identifiers_id_type_check
+  CHECK (id_type IN ('duns', 'ticker', 'cik', 'lei', 'internal_customer_code', 'tax_id'));
+
 
 --
 -- Name: TABLE customer_identifiers; Type: COMMENT; Schema: public; Owner: -
@@ -770,6 +774,16 @@ CREATE TABLE public.customers (
     CONSTRAINT customers_payment_trend_check CHECK (((payment_trend = ANY (ARRAY['improving'::text, 'stable'::text, 'deteriorating'::text, 'insufficient_data'::text])) OR (payment_trend IS NULL))),
     CONSTRAINT customers_sector_check CHECK ((sector = ANY (ARRAY['Aerospace & Defense'::text, 'Energy'::text, 'Industrial Manufacturing'::text, 'Materials'::text, 'Transportation'::text, 'Mining'::text, 'Other'::text])))
 );
+
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS international_business_name text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS trade_name text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS website text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS naics_sic_code text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS street_address text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS city text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS postcode text;
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS invoicing_currency text DEFAULT 'USD';
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_manager text;
 
 
 --
