@@ -13,7 +13,7 @@ import ReactMarkdown from "react-markdown";
 
 export interface Source {
   event_id?: string;
-  source_type?: "credit_events" | "negative_news" | "sec_filings";
+  source_type?: "credit_events" | "negative_news" | "sec_filings" | "customers" | "invoices" | "payment_transactions";
   customer_name: string;
   event_type: string;
   severity: "critical" | "high" | "medium" | "low" | "info";
@@ -184,6 +184,7 @@ export default function CIA() {
     if (source.static) return;
     if (source.source_type === "negative_news") navigate(`/news?event_id=${source.event_id}`);
     else if (source.source_type === "sec_filings") navigate(`/sec?customer_id=${source.event_id}`);
+    else if (source.source_type === "customers" || source.source_type === "invoices" || source.source_type === "payment_transactions") navigate(`/customers?customer_id=${source.event_id}`);
     else navigate(`/events?event_id=${source.event_id}`);
   };
 

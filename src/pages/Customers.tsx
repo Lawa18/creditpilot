@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { CustomerDetail } from "@/components/CustomerDetail";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -16,6 +17,8 @@ export default function Customers() {
   const [search, setSearch] = useState("");
   const [scenarioFilter, setScenarioFilter] = useState("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const customerIdParam = searchParams.get("customer_id");
 
   const { data: customers, isLoading } = useQuery({
     queryKey: ["customers"],
@@ -27,6 +30,11 @@ export default function Customers() {
       return data ?? [];
     },
   });
+
+  useEffect(() => {
+    if (!customerIdParam || !customers) return;
+    if (customers.some((c) => c.id === customerIdParam)) setSelectedId(customerIdParam);
+  }, [customerIdParam, customers]);
 
   const selectedCustomer = customers?.find((c) => c.id === selectedId);
 

@@ -319,6 +319,7 @@ interface RetrievedData {
 interface TagLookupEntry {
   table: "customers" | "invoices" | "payment_transactions" | "negative_news" | "sec_filings" | "credit_events";
   id: string | null;
+  customer_id: string | null;
   customer_name: string | null;
   event_type: string | null;
   severity: string | null;
@@ -382,7 +383,7 @@ async function fetchRelevantData(
 
       const baseQuery = () => supabase
         .from("credit_events")
-        .select("id, event_type, severity, source_agent, title, description, payload, created_at, customers!left(company_name, credit_limit, current_exposure)")
+        .select("id, customer_id, event_type, severity, source_agent, title, description, payload, created_at, customers!left(company_name, credit_limit, current_exposure)")
         .eq("is_demo", demoMode)
         .order("severity_score", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
@@ -694,6 +695,7 @@ serve(async (req: Request) => {
         tagMap.set(tag, {
           table: "customers",
           id: c.id ?? null,
+          customer_id: c.id ?? null,
           customer_name: c.company_name ?? null,
           event_type: null,
           severity: null,
@@ -729,6 +731,7 @@ serve(async (req: Request) => {
         tagMap.set(tag, {
           table: "invoices",
           id: inv.id ?? null,
+          customer_id: inv.customer_id ?? null,
           customer_name: inv.company_name ?? null,
           event_type: null,
           severity: null,
@@ -745,6 +748,7 @@ serve(async (req: Request) => {
         tagMap.set(tag, {
           table: "payment_transactions",
           id: null,
+          customer_id: p.customer_id ?? null,
           customer_name: p.company_name ?? null,
           event_type: null,
           severity: null,
@@ -761,6 +765,7 @@ serve(async (req: Request) => {
         tagMap.set(tag, {
           table: "negative_news",
           id: n.id ?? null,
+          customer_id: n.customer_id ?? null,
           customer_name: n.customers?.company_name ?? null,
           event_type: "NEGATIVE_NEWS",
           severity: n.severity ?? null,
@@ -777,6 +782,7 @@ serve(async (req: Request) => {
         tagMap.set(tag, {
           table: "sec_filings",
           id: f.customer_id ?? null,
+          customer_id: f.customer_id ?? null,
           customer_name: f.customers?.company_name ?? null,
           event_type: f.filing_type ?? "SEC_FILING",
           severity: null,
@@ -793,6 +799,7 @@ serve(async (req: Request) => {
         tagMap.set(tag, {
           table: "credit_events",
           id: e.id ?? null,
+          customer_id: e.customer_id ?? null,
           customer_name: e.customers?.company_name ?? null,
           event_type: e.event_type ?? null,
           severity: e.severity ?? null,
@@ -915,17 +922,17 @@ Schema: {"confidence":"High|Medium|Low","confidence_reason":"one sentence statin
       // Build sources deterministically from mechanically-verified inline citation
       // tags — a tag only survives if the model actually cited it AND it corresponds
       // to a real record provided in the context (never from LLM self-report alone).
-      // Only credit_events/negative_news/sec_filings produce a source card; customers/
-      // invoices/payment_transactions tags are verified but have no source_type the
-      // frontend understands, matching the existing empty-sources UI for portfolio-
-      // level answers.
-      const sources: Array<{event_id: string; source_type: "credit_events" | "negative_news" | "sec_filings"; customer_name: string; event_type: string | null; severity: string | null; date: string | null; agent: string | null}> = [];
+      // credit_events/negative_news route to that specific event's own record (their
+      // pages highlight by event id); customers/invoices/payment_transactions/sec_filings
+      // have no dedicated per-row destination, so they route to the owning customer's
+      // detail page via customer_id instead.
+      const sources: Array<{event_id: string; source_type: "credit_events" | "negative_news" | "sec_filings" | "customers" | "invoices" | "payment_transactions"; customer_name: string; event_type: string | null; severity: string | null; date: string | null; agent: string | null}> = [];
       for (const tag of verifiedTags) {
         const entry = tagMap.get(tag)!;
-        if (entry.table !== "credit_events" && entry.table !== "negative_news" && entry.table !== "sec_filings") continue;
-        if (!entry.id || !entry.customer_name) continue;
+        const eventId = (entry.table === "credit_events" || entry.table === "negative_news") ? entry.id : entry.customer_id;
+        if (!eventId || !entry.customer_name) continue;
         sources.push({
-          event_id: entry.id,
+          event_id: eventId,
           source_type: entry.table,
           customer_name: entry.customer_name,
           event_type: entry.event_type,
