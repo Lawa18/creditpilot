@@ -309,6 +309,7 @@ interface RetrievedData {
   sec_filings_matched: any[];
   customers: any[];
   invoices: any[];
+  ar_aging_portfolio_summary: any | null;
   payment_transactions: any[];
   negative_news: any[];
   sec_filings: any[];
@@ -367,6 +368,7 @@ async function fetchRelevantData(
     sec_filings_matched: [],
     customers: [],
     invoices: [],
+    ar_aging_portfolio_summary: null,
     payment_transactions: [],
     negative_news: [],
     sec_filings: [],
@@ -477,8 +479,21 @@ async function fetchRelevantData(
         .order("due_date", { ascending: true })
         .limit(20);
 
-      if (custIds.length > 0) q = q.in("customer_id", custIds);
-      else q = q.lt("due_date", todayStr).not("status", "in", "(paid,written_off)");
+      if (custIds.length > 0) {
+        q = q.in("customer_id", custIds);
+      } else {
+        q = q.lt("due_date", todayStr).not("status", "in", "(paid,written_off)");
+
+        // Portfolio-wide question (no named customer): also fetch pre-computed,
+        // deterministic aggregate totals — the raw invoice line items above are
+        // unreliable for the model to sum itself across many records.
+        const { data: portfolioSummary, error: portfolioSummaryErr } = await supabase
+          .from("v_ar_aging_portfolio")
+          .select("*")
+          .single();
+        if (portfolioSummaryErr) console.error("v_ar_aging_portfolio query error:", portfolioSummaryErr.message);
+        results.ar_aging_portfolio_summary = portfolioSummary ?? null;
+      }
 
       const { data } = await q;
 
@@ -725,6 +740,22 @@ serve(async (req: Request) => {
       contextParts.push("## CUSTOMERS TABLE\n" + customerLines.map(({ line }) => line).join("\n"));
     }
 
+    if (data.ar_aging_portfolio_summary) {
+      const s = data.ar_aging_portfolio_summary;
+      contextParts.push(
+        `## OFFICIAL AR AGING PORTFOLIO TOTALS (pre-computed, deterministic — the complete and authoritative answer to any portfolio-wide "total overdue" / "total exposure" / "aging summary" question; do not recompute these by summing individual invoices)\n` +
+        `- Current: $${Number(s.total_current ?? 0).toLocaleString()} (${s.pct_current ?? 0}%)\n` +
+        `- 1-30 days overdue: $${Number(s.total_1_30 ?? 0).toLocaleString()} (${s.pct_1_30 ?? 0}%)\n` +
+        `- 31-60 days overdue: $${Number(s.total_31_60 ?? 0).toLocaleString()} (${s.pct_31_60 ?? 0}%)\n` +
+        `- 61-90 days overdue: $${Number(s.total_61_90 ?? 0).toLocaleString()} (${s.pct_61_90 ?? 0}%)\n` +
+        `- 90+ days overdue: $${Number(s.total_over_90 ?? 0).toLocaleString()} (${s.pct_over_90 ?? 0}%)\n` +
+        `- Pre-petition (bankruptcy, frozen): $${Number(s.total_pre_petition ?? 0).toLocaleString()}\n` +
+        `- Total outstanding: $${Number(s.total_outstanding ?? 0).toLocaleString()}\n` +
+        `- Customers with outstanding AR: ${s.customer_count ?? "N/A"}\n` +
+        `- As of: ${s.snapshot_date ?? "N/A"}`
+      );
+    }
+
     if (data.invoices.length > 0) {
       contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any, i: number) => {
         const tag = `I${i + 1}`;
@@ -822,7 +853,7 @@ serve(async (req: Request) => {
       const answerMessage = await anthropic.messages.create({
         model,
         max_tokens: maxTokens,
-        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
+        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
         messages: [{
           role: "user",
           content: `Question: ${question}\n\nData:\n${context || "No relevant data found."}`,
