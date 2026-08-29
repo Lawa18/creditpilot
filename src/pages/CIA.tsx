@@ -15,10 +15,10 @@ export interface Source {
   event_id?: string;
   source_type?: "credit_events" | "negative_news" | "sec_filings" | "customers" | "invoices" | "payment_transactions";
   customer_name: string;
-  event_type: string;
-  severity: "critical" | "high" | "medium" | "low" | "info";
+  event_type: string | null;
+  severity: "critical" | "high" | "medium" | "low" | "info" | null;
   date: string;
-  agent: string;
+  agent: string | null;
   static?: boolean;
 }
 
@@ -32,13 +32,14 @@ export interface CIAAnswer {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function severityDot(severity: string) {
+function severityDot(severity: string | null) {
   if (severity === "critical" || severity === "high") return "bg-red-500";
   if (severity === "medium") return "bg-amber-400";
   return "bg-gray-300";
 }
 
-function agentLabel(agent: string) {
+function agentLabel(agent: string | null | undefined) {
+  if (!agent) return "Record";
   if (agent.includes("ar_aging") || agent.includes("ar-aging")) return "AR";
   if (agent.includes("news")) return "News";
   if (agent.includes("sec")) return "SEC";
@@ -252,7 +253,7 @@ export default function CIA() {
                       <span className="text-gray-300">·</span>
                       <span className="text-xs text-muted-foreground shrink-0">{agentLabel(s.agent)}</span>
                       <span className="text-gray-300">·</span>
-                      <span className="text-xs font-mono text-muted-foreground truncate">{s.event_type.replace(/_/g, " ")}</span>
+                      <span className="text-xs font-mono text-muted-foreground truncate">{(s.event_type ?? s.source_type ?? "Record").replace(/_/g, " ")}</span>
                       <span className="text-gray-300 ml-auto">·</span>
                       <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
                     </div>
@@ -268,7 +269,7 @@ export default function CIA() {
                       <span className="text-gray-300">·</span>
                       <span className="text-xs text-muted-foreground shrink-0">{agentLabel(s.agent)}</span>
                       <span className="text-gray-300">·</span>
-                      <span className="text-xs font-mono text-muted-foreground truncate">{s.event_type.replace(/_/g, " ")}</span>
+                      <span className="text-xs font-mono text-muted-foreground truncate">{(s.event_type ?? s.source_type ?? "Record").replace(/_/g, " ")}</span>
                       <span className="text-gray-300 ml-auto">·</span>
                       <span className="text-xs text-muted-foreground shrink-0">{formatDate(s.date)}</span>
                     </button>
