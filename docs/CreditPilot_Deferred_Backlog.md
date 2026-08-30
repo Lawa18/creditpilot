@@ -1024,3 +1024,23 @@ Commits: 5469b58 (core redesign), 7caf130 (range-notation stripping fix, found v
 **Remaining follow-up work, already logged separately:** LLM-based retrieval to replace the still-regex-based table-routing/keyword-extraction logic (multi-language support depends on this), and surfacing customers/invoices/payment_transactions citations as real source cards once a frontend destination exists for them.
 
 **Follow-up shipped, same day:** customers/invoices/payment_transactions citations now produce real, clickable source cards -- previously verified but deliberately not surfaced, since the frontend had no destination for them. They route to /customers?customer_id=X, which now reads the param and opens that customer's detail Sheet automatically (Customers.tsx had zero URL-param support before this). Matches the existing standard already accepted for sec_filings sources (open the record, not a specific row) -- Invoices/Payments tabs don't yet have row-level highlight infrastructure, so jumping to a specific tab was deliberately left out of this pass rather than building half a feature. Verified live: "Should I be worried about American Airlines?" (confirmed entirely customers-table-sourced, zero credit_events) now correctly shows a real, clickable customers source card. Commit ae45366. Harness 8/8.
+
+---
+
+## CIA arithmetic-reliability sweep: LLM-computed aggregates fixed across the board (2026-08-29/30)
+
+Found live, by the founder testing "ar aging summary" repeatedly and noticing genuinely different totals each time (not phrasing variance -- real numbers off by millions: $7.58M vs $10.44M). Root cause: several question types handed the model raw multi-record data (invoices, customer balances) and implicitly expected it to sum/average them correctly itself -- a well-documented LLM limitation, not a retrieval or prompting problem. Researched properly before fixing (per project convention): confirmed this as a named, standard production pattern ("Zero Mental Math Architecture" / deterministic tool-use), with one cited clinical-AI study measuring 5.5x-13x error-rate reduction from offloading arithmetic to deterministic tools.
+
+**Fix wave 1 (commit d92dfc1):** portfolio-wide AR aging totals, using the existing v_ar_aging_portfolio view. Verified live: 3 identical runs, byte-for-byte identical totals afterward.
+
+**Systematic sweep (same session):** audited every branch of fetchRelevantData for the same vulnerability class. Found 4 more real, unfixed instances plus correctly deprioritized several low-risk ones (credit_events/negative_news/sec_filings involve counting short rows, not summing dollar figures -- a much milder version of the same weakness).
+
+**Fix wave 2 (commit f5adb18):** (1) named-customer AR aging totals via v_ar_aging_current; (2) combined totals when 2+ companies are named in one question, computed server-side; (3) combined credit limit/exposure across the RISK_FLAG=HIGH set; (4) named-customer payment behaviour totals via v_payment_behaviour (found to be a better, live-computed source than the periodically-updated customer-table fields). Portfolio-wide payment behaviour deferred -- no aggregate view exists yet, would need a new migration; logged as a real follow-up, not silently dropped.
+
+**Process failure worth naming honestly:** the sector-exposure aggregation case -- the ORIGINAL bug the founder had already found and reported, before any of this investigation started -- was correctly identified in the sweep's own findings table, but got mislabeled as "already handled" during planning when it was only "already identified," and was never actually included in fix wave 2's scope. Confirmed live immediately after wave 2 shipped: the exact original bug was still fully live, still producing different totals every run. This was a real tracking gap between what was found and what was built, not a false alarm -- caught only because the founder re-tested the original case after the "fix," rather than assuming the sweep had covered it.
+
+**Fix wave 3 (commit 40a7068):** the sector-exposure case, same pattern -- pre-computed combined total via a new context section, plus raised the sector query's row cap (30 -> 50, since Aerospace & Defense alone has 26 customers, too close to the old limit for safety). Verified live: 4 consecutive runs, identical $51,070,000 / 26 customers every time.
+
+**Durable outcome:** CLAUDE.md created at the repo root (commit 45f38aa) -- read automatically at the start of every future session -- capturing this as a standing principle for all future agents/fields/features, not a one-off fix. Also closes the long-pending "CLAUDE.md to repo root" housekeeping item.
+
+Harness 8/8 maintained throughout all three waves.
