@@ -308,9 +308,12 @@ interface RetrievedData {
   negative_news_matched: any[];
   sec_filings_matched: any[];
   customers: any[];
+  customers_combined_total: { count: number; company_names: string[]; total_credit_limit: number; total_current_exposure: number } | null;
   invoices: any[];
   ar_aging_portfolio_summary: any | null;
+  ar_aging_customer_summary: any[] | null;
   payment_transactions: any[];
+  payment_behavior_summary: any[] | null;
   negative_news: any[];
   sec_filings: any[];
 }
@@ -367,9 +370,12 @@ async function fetchRelevantData(
     negative_news_matched: [],
     sec_filings_matched: [],
     customers: [],
+    customers_combined_total: null,
     invoices: [],
     ar_aging_portfolio_summary: null,
+    ar_aging_customer_summary: null,
     payment_transactions: [],
+    payment_behavior_summary: null,
     negative_news: [],
     sec_filings: [],
   };
@@ -422,6 +428,16 @@ async function fetchRelevantData(
         if (namedErr) console.error("customers named error:", namedErr.message);
         // Don't fall back to full list — return whatever the name search found (even empty)
         results.customers = named ?? [];
+        if ((named ?? []).length >= 2) {
+          // Multiple named companies matched: pre-compute their combined total so the
+          // model doesn't have to sum raw balances across them itself.
+          results.customers_combined_total = {
+            count: named!.length,
+            company_names: named!.map((c: any) => c.company_name),
+            total_credit_limit: named!.reduce((sum: number, c: any) => sum + (c.credit_limit ?? 0), 0),
+            total_current_exposure: named!.reduce((sum: number, c: any) => sum + (c.current_exposure ?? 0), 0),
+          };
+        }
         return;
       }
       // Detect sector keywords in the question and filter customers by canonical sector.
@@ -481,6 +497,16 @@ async function fetchRelevantData(
 
       if (custIds.length > 0) {
         q = q.in("customer_id", custIds);
+
+        // Named customer(s): also fetch pre-computed, deterministic per-customer
+        // aggregate totals — the raw invoice line items above are unreliable for
+        // the model to sum itself across potentially many records.
+        const { data: customerSummary, error: customerSummaryErr } = await supabase
+          .from("v_ar_aging_current")
+          .select("customer_id, company_name, current_amount, bucket_1_30, bucket_31_60, bucket_61_90, bucket_over_90, pre_petition_amount, total_outstanding, utilization_pct, risk_tier, credit_limit, total_invoice_count")
+          .in("customer_id", custIds);
+        if (customerSummaryErr) console.error("v_ar_aging_current query error:", customerSummaryErr.message);
+        results.ar_aging_customer_summary = customerSummary ?? null;
       } else {
         q = q.lt("due_date", todayStr).not("status", "in", "(paid,written_off)");
 
@@ -543,7 +569,18 @@ async function fetchRelevantData(
         .order("payment_date", { ascending: false })
         .limit(30);
 
-      if (custIds.length > 0) q = q.in("customer_id", custIds);
+      if (custIds.length > 0) {
+        q = q.in("customer_id", custIds);
+
+        // Named customer(s): also fetch pre-computed, deterministic payment-behaviour
+        // aggregates — averaging/summing the raw transactions below is unreliable.
+        const { data: behaviorSummary, error: behaviorSummaryErr } = await supabase
+          .from("v_payment_behaviour")
+          .select("customer_id, company_name, total_payments, total_paid_all_time, avg_days_to_pay, avg_days_early_late, on_time_payment_pct, last_payment_date, last_payment_amount")
+          .in("customer_id", custIds);
+        if (behaviorSummaryErr) console.error("v_payment_behaviour query error:", behaviorSummaryErr.message);
+        results.payment_behavior_summary = behaviorSummary ?? null;
+      }
 
       const { data } = await q;
 
@@ -729,11 +766,25 @@ serve(async (req: Request) => {
       // it can't get lost in a long customer table or out-competed by credit_events content.
       const highRiskLines = customerLines.filter(({ customer }) => customer.is_high_risk);
       if (highRiskLines.length > 0) {
+        const highRiskTotalCreditLimit = highRiskLines.reduce((sum, { customer: c }) => sum + (c.credit_limit ?? 0), 0);
+        const highRiskTotalExposure = highRiskLines.reduce((sum, { customer: c }) => sum + (c.current_exposure ?? 0), 0);
         contextParts.push(
           `## OFFICIAL HIGH-RISK CUSTOMER LIST (business-locked ranking — the complete, authoritative answer to any "highest risk" / "most at-risk" portfolio-wide question)\n` +
           highRiskLines.map(({ tag, customer: c }) =>
             `- ${sanitize(c.company_name)} [${tag}] (credit_score=${c.credit_rating_score ?? "NR"}/100, scenario=${sanitize(c.scenario) || "N/A"})`
-          ).join("\n")
+          ).join("\n") +
+          `\n- Combined credit limit across this high-risk set: $${highRiskTotalCreditLimit.toLocaleString()}\n` +
+          `- Combined current exposure across this high-risk set: $${highRiskTotalExposure.toLocaleString()}`
+        );
+      }
+
+      if (data.customers_combined_total) {
+        const t = data.customers_combined_total;
+        contextParts.push(
+          `## OFFICIAL COMBINED TOTAL — NAMED CUSTOMERS (pre-computed, deterministic — the authoritative combined figure across the ${t.count} companies named in this question; do not recompute by summing the CUSTOMERS TABLE rows yourself)\n` +
+          `- Companies included: ${t.company_names.join(", ")}\n` +
+          `- Combined credit limit: $${Number(t.total_credit_limit).toLocaleString()}\n` +
+          `- Combined current exposure: $${Number(t.total_current_exposure).toLocaleString()}`
         );
       }
 
@@ -756,6 +807,15 @@ serve(async (req: Request) => {
       );
     }
 
+    if (data.ar_aging_customer_summary && data.ar_aging_customer_summary.length > 0) {
+      contextParts.push(
+        `## OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) (pre-computed, deterministic — the authoritative answer to a named customer's total overdue balance or aging-bucket breakdown; do not recompute these by summing individual invoices)\n` +
+        data.ar_aging_customer_summary.map((s: any) =>
+          `- ${sanitize(s.company_name)}: current=$${Number(s.current_amount ?? 0).toLocaleString()}, 1-30=$${Number(s.bucket_1_30 ?? 0).toLocaleString()}, 31-60=$${Number(s.bucket_31_60 ?? 0).toLocaleString()}, 61-90=$${Number(s.bucket_61_90 ?? 0).toLocaleString()}, 90+=$${Number(s.bucket_over_90 ?? 0).toLocaleString()}, pre_petition=$${Number(s.pre_petition_amount ?? 0).toLocaleString()}, total_outstanding=$${Number(s.total_outstanding ?? 0).toLocaleString()}, utilization=${s.utilization_pct ?? "N/A"}%, risk_tier=${s.risk_tier ?? "N/A"}, invoice_count=${s.total_invoice_count ?? "N/A"}`
+        ).join("\n")
+      );
+    }
+
     if (data.invoices.length > 0) {
       contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any, i: number) => {
         const tag = `I${i + 1}`;
@@ -771,6 +831,15 @@ serve(async (req: Request) => {
         });
         return `- [${tag}] ${sanitize(inv.company_name)}: invoice ${sanitize(inv.invoice_number)}, amount=$${inv.invoice_amount?.toLocaleString()}, outstanding=$${inv.outstanding_amount?.toLocaleString()}, due=${inv.due_date}, status=${inv.status}, days_overdue=${inv.days_overdue}`;
       }).join("\n"));
+    }
+
+    if (data.payment_behavior_summary && data.payment_behavior_summary.length > 0) {
+      contextParts.push(
+        `## OFFICIAL PAYMENT BEHAVIOR TOTALS (pre-computed, deterministic — the authoritative answer to a named customer's average days to pay, on-time rate, or total paid; do not recompute these by averaging or summing the raw PAYMENT TRANSACTIONS TABLE yourself)\n` +
+        data.payment_behavior_summary.map((p: any) =>
+          `- ${sanitize(p.company_name)}: total_payments=${p.total_payments ?? "N/A"}, total_paid_all_time=$${Number(p.total_paid_all_time ?? 0).toLocaleString()}, avg_days_to_pay=${p.avg_days_to_pay ?? "N/A"}, avg_days_early_late=${p.avg_days_early_late ?? "N/A"} (${(p.avg_days_early_late ?? 0) > 0 ? "late" : (p.avg_days_early_late ?? 0) < 0 ? "early" : "on time"}), on_time_rate=${p.on_time_payment_pct ?? "N/A"}%, last_payment=$${Number(p.last_payment_amount ?? 0).toLocaleString()} on ${p.last_payment_date ?? "N/A"}`
+        ).join("\n")
+      );
     }
 
     if (data.payment_transactions.length > 0) {
@@ -853,7 +922,7 @@ serve(async (req: Request) => {
       const answerMessage = await anthropic.messages.create({
         model,
         max_tokens: maxTokens,
-        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
+        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. If asked for the combined exposure or credit limit of that high-risk set, use the combined figures stated in that section directly, not a manual sum. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. For a named customer's AR aging totals, use the OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) section the same way. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. When a question names two or more specific companies and asks for a combined or total figure across them, use the OFFICIAL COMBINED TOTAL — NAMED CUSTOMERS section directly, never sum the CUSTOMERS TABLE rows yourself. For a named customer's payment history (average days to pay, on-time rate, total paid), use the pre-computed figures in the OFFICIAL PAYMENT BEHAVIOR TOTALS section directly — never re-derive them by averaging or summing the raw PAYMENT TRANSACTIONS TABLE yourself; use that raw table only to list or describe specific individual transactions when asked. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
         messages: [{
           role: "user",
           content: `Question: ${question}\n\nData:\n${context || "No relevant data found."}`,
