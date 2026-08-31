@@ -300,6 +300,123 @@ function routeQuestion(question: string): Set<string> {
   return tables;
 }
 
+// ─── LLM-based question entity extraction ────────────────────────────────────
+// Replaces routeQuestion's regex table-detection and fetchRelevantData's regex
+// proper-noun/sector extraction as the primary path. Both are English-only and
+// structurally can't handle other languages (German capitalizes every common
+// noun; French/Spanish diacritics fall outside [A-Za-z] and truncate names).
+// The old regex logic is preserved below as regexFallbackExtraction, used only
+// if this call fails or returns malformed output — never a hard failure.
+
+interface QuestionExtraction {
+  company_mentions: string[];
+  sector: string | null;
+  tables: Set<string>;
+}
+
+const CANONICAL_SECTORS = new Set([
+  "Aerospace & Defense", "Energy", "Industrial Manufacturing",
+  "Materials", "Transportation", "Mining", "Other",
+]);
+
+const KNOWN_TABLES = new Set([
+  "credit_events", "customers", "invoices", "payment_transactions", "negative_news", "sec_filings",
+]);
+
+// Pre-LLM regex logic, preserved as the fallback path (not deleted). Mirrors
+// routeQuestion's table detection plus fetchRelevantData's former proper-noun
+// and SECTOR_KEYWORDS extraction, so a failed extraction call degrades to
+// exactly today's behavior rather than failing the question outright.
+function regexFallbackExtraction(question: string): QuestionExtraction {
+  const tables = routeQuestion(question);
+
+  const STOPWORDS = new Set(["What", "Which", "Who", "How", "When", "Where", "Why", "The", "Their", "Corporation", "Company", "Group", "Inc", "Ltd", "LLC", "Current", "Credit", "Limit", "Balance", "And", "For", "Has", "Have", "Does", "Should", "Could", "Would", "Tell", "Show", "Give", "Get"]);
+  const company_mentions = (question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? [])
+    .flatMap(phrase => phrase.split(" "))
+    .filter(w => !STOPWORDS.has(w) && w.length > 2);
+
+  const SECTOR_KEYWORDS: Record<string, string[]> = {
+    'Aerospace & Defense': ['aerospace', 'aviation', 'defense', 'naval', 'airline', 'aircraft', 'space'],
+    'Energy': ['energy', 'power', 'oil', 'gas', 'petroleum', 'solar', 'fuel cell'],
+    'Industrial Manufacturing': ['industrial', 'manufacturing', 'precision', 'engineering', 'machinery'],
+    'Materials': ['materials', 'metal', 'aluminum', 'alloy', 'coating', 'fabrication'],
+    'Transportation': ['transportation', 'freight', 'trucking', 'transit'],
+    'Mining': ['mining'],
+  };
+  const qLower = question.toLowerCase();
+  const detectedSector = Object.entries(SECTOR_KEYWORDS).find(([_, kws]) =>
+    kws.some(kw => qLower.includes(kw))
+  );
+
+  return {
+    company_mentions,
+    sector: detectedSector ? detectedSector[0] : null,
+    tables,
+  };
+}
+
+// Validates/sanitizes the LLM extraction call's parsed JSON before it's trusted —
+// unknown table names or non-canonical sector values are dropped rather than
+// passed through, since downstream code (the sector .eq() filter, table Set
+// lookups) assumes only known values ever appear. Throws on a fundamentally
+// malformed shape so the caller falls back to regex rather than trusting garbage.
+function validateExtraction(parsed: any): QuestionExtraction {
+  if (!parsed || typeof parsed !== "object") throw new Error("extraction result is not an object");
+
+  const company_mentions = Array.isArray(parsed.company_mentions)
+    ? parsed.company_mentions
+        .filter((m: unknown): m is string => typeof m === "string" && m.trim().length > 0)
+        .map((m: string) => m.trim())
+    : [];
+
+  const sector = typeof parsed.sector === "string" && CANONICAL_SECTORS.has(parsed.sector)
+    ? parsed.sector
+    : null;
+
+  const tables = new Set<string>(
+    Array.isArray(parsed.tables)
+      ? parsed.tables.filter((t: unknown): t is string => typeof t === "string" && KNOWN_TABLES.has(t))
+      : []
+  );
+  tables.add("credit_events"); // always included, matches existing routeQuestion behavior
+
+  return { company_mentions, sector, tables };
+}
+
+// Primary extraction path: one Haiku call resolves table routing, company name
+// mentions, and sector — replacing the regex table detection, proper-noun checks,
+// and SECTOR_KEYWORDS matching with a single language-agnostic pass. Always
+// resolves (never throws) — falls back to the exact prior regex behavior on any
+// failure, so a bad extraction degrades gracefully rather than failing the question.
+async function extractQuestionEntities(anthropic: Anthropic, question: string): Promise<QuestionExtraction> {
+  try {
+    const message = await anthropic.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 200,
+      system: `Extract structured routing information from a credit analyst's question about a B2B trade credit portfolio. Return ONLY valid JSON, no other text, matching exactly this schema:
+{"company_mentions": string[], "sector": string|null, "tables": string[]}
+
+- company_mentions: the raw company name fragment(s) mentioned in the question, exactly as they appear or are clearly implied (e.g. "Cascade's" -> "Cascade", "l'entreprise Cascade" -> "Cascade"). Do NOT resolve to a canonical/official company name — just extract the mentioned fragment; a separate database search handles fuzzy matching against real records. Empty array if no company is named.
+- sector: exactly one of these 7 values if the question refers to an industry/sector broadly rather than one named company: "Aerospace & Defense", "Energy", "Industrial Manufacturing", "Materials", "Transportation", "Mining", "Other". Use null if no sector is referenced.
+- tables: which of these 6 table names are relevant to answering the question: "credit_events", "customers", "invoices", "payment_transactions", "negative_news", "sec_filings". Include "customers" whenever a specific company or a sector is mentioned. Include every table genuinely relevant, not just one. Always include at least one table.
+
+The question may be in any language — extract meaning and intent, not just English keyword matches.`,
+      messages: [{ role: "user", content: question }],
+    });
+    const text = extractText(message);
+    const cleaned = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+    const firstBrace = cleaned.indexOf("{");
+    const lastBrace = cleaned.lastIndexOf("}");
+    const jsonSlice = firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace
+      ? cleaned.slice(firstBrace, lastBrace + 1)
+      : cleaned;
+    return validateExtraction(JSON.parse(jsonSlice));
+  } catch (err) {
+    console.error("[cia-agent] question extraction failed, falling back to regex:", (err as Error).message);
+    return regexFallbackExtraction(question);
+  }
+}
+
 // ─── Parallel data fetcher ────────────────────────────────────────────────────
 
 interface RetrievedData {
@@ -313,8 +430,10 @@ interface RetrievedData {
   invoices: any[];
   ar_aging_portfolio_summary: any | null;
   ar_aging_customer_summary: any[] | null;
+  ar_aging_sector_summary: { sector: string; count: number; total_current: number; total_1_30: number; total_31_60: number; total_61_90: number; total_over_90: number; total_pre_petition: number; total_outstanding: number } | null;
   payment_transactions: any[];
   payment_behavior_summary: any[] | null;
+  payment_behavior_sector_summary: { sector: string; count: number; total_payments: number; total_paid_all_time: number; avg_days_to_pay: number | null; avg_days_early_late: number | null; on_time_payment_pct: number | null } | null;
   negative_news: any[];
   sec_filings: any[];
 }
@@ -336,15 +455,10 @@ async function fetchRelevantData(
   supabase: any,
   question: string,
   tables: Set<string>,
-  demoMode: boolean
+  demoMode: boolean,
+  companyMentions: string[],
+  sector: string | null
 ): Promise<RetrievedData> {
-
-  // Extract customer name mentions from question for targeted queries
-  // Strip common English words that match the capitalised-word pattern but are not company names
-  const STOPWORDS = new Set(["What", "Which", "Who", "How", "When", "Where", "Why", "The", "Their", "Corporation", "Company", "Group", "Inc", "Ltd", "LLC", "Current", "Credit", "Limit", "Balance", "And", "For", "Has", "Have", "Does", "Should", "Could", "Would", "Tell", "Show", "Give", "Get"]);
-  const words = (question.match(/[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*/g) ?? [])
-    .flatMap(phrase => phrase.split(" "))
-    .filter(w => !STOPWORDS.has(w) && w.length > 2);
 
   // Generic question-scaffolding words that match event text noisily without
   // discriminating — exclude from keyword search (domain terms like "negative",
@@ -376,8 +490,10 @@ async function fetchRelevantData(
     invoices: [],
     ar_aging_portfolio_summary: null,
     ar_aging_customer_summary: null,
+    ar_aging_sector_summary: null,
     payment_transactions: [],
     payment_behavior_summary: null,
+    payment_behavior_sector_summary: null,
     negative_news: [],
     sec_filings: [],
   };
@@ -418,9 +534,9 @@ async function fetchRelevantData(
     tables.has("customers") && (async () => {
       const selectFields = "id, company_name, company_type, credit_limit, current_exposure, credit_rating_score, credit_rating_raw, credit_rating_source, scenario, risk_tags, payment_on_time_rate, payment_trend, payment_health";
 
-      if (words.length > 0) {
+      if (companyMentions.length > 0) {
         // Specific company names mentioned — targeted name search
-        const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
+        const nameFilter = companyMentions.map(w => `company_name.ilike.%${w}%`).join(",");
         const { data: named, error: namedErr } = await supabase
           .from("customers")
           .select(selectFields)
@@ -442,28 +558,12 @@ async function fetchRelevantData(
         }
         return;
       }
-      // Detect sector keywords in the question and filter customers by canonical sector.
-      // Without this, sector-level questions return top-20-by-credit-limit and the model
-      // must mentally classify each customer's industry — leading to inconsistent results.
-      const SECTOR_KEYWORDS: Record<string, string[]> = {
-        'Aerospace & Defense': ['aerospace', 'aviation', 'defense', 'naval', 'airline', 'aircraft', 'space'],
-        'Energy': ['energy', 'power', 'oil', 'gas', 'petroleum', 'solar', 'fuel cell'],
-        'Industrial Manufacturing': ['industrial', 'manufacturing', 'precision', 'engineering', 'machinery'],
-        'Materials': ['materials', 'metal', 'aluminum', 'alloy', 'coating', 'fabrication'],
-        'Transportation': ['transportation', 'freight', 'trucking', 'transit'],
-        'Mining': ['mining'],
-      };
-      const qLower = question.toLowerCase();
-      const detectedSector = Object.entries(SECTOR_KEYWORDS).find(([_, kws]) =>
-        kws.some(kw => qLower.includes(kw))
-      );
 
-      if (detectedSector) {
-        const [sectorName] = detectedSector;
+      if (sector) {
         const { data, error } = await supabase
           .from('customers')
           .select(selectFields)
-          .eq('sector', sectorName)
+          .eq('sector', sector)
           .order('credit_limit', { ascending: false })
           .limit(50);
         if (error) console.error('sector filter error:', error.message);
@@ -472,7 +572,7 @@ async function fetchRelevantData(
           // Pre-compute the sector's combined total so the model doesn't have to
           // sum raw balances across up to 50 returned customers itself.
           results.customers_sector_total = {
-            sector: sectorName,
+            sector,
             count: data!.length,
             total_credit_limit: data!.reduce((sum: number, c: any) => sum + (c.credit_limit ?? 0), 0),
             total_current_exposure: data!.reduce((sum: number, c: any) => sum + (c.current_exposure ?? 0), 0),
@@ -490,14 +590,27 @@ async function fetchRelevantData(
     // invoices — filter by customer name mention or return at-risk
     tables.has("invoices") && (async () => {
       let custIds: string[] = [];
-      if (words.length > 0) {
-        const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
+      let custIdSource: "named" | "sector" | "none" = "none";
+      if (companyMentions.length > 0) {
+        const nameFilter = companyMentions.map(w => `company_name.ilike.%${w}%`).join(",");
         const { data: matched, error: matchedErr } = await supabase
           .from("customers")
           .select("id")
           .or(nameFilter);
         if (matchedErr) console.error("customers matched error:", matchedErr.message);
         custIds = (matched ?? []).map((c: any) => c.id);
+        custIdSource = "named";
+      } else if (sector) {
+        // Sector-wide question (no named company): scope invoices to the sector's
+        // customers instead of falling through to the fully portfolio-wide branch —
+        // previously this branch had no sector awareness at all.
+        const { data: sectorMatched, error: sectorMatchedErr } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("sector", sector);
+        if (sectorMatchedErr) console.error("customers sector-match error:", sectorMatchedErr.message);
+        custIds = (sectorMatched ?? []).map((c: any) => c.id);
+        custIdSource = "sector";
       }
 
       const todayStr = new Date().toISOString().split("T")[0];
@@ -510,15 +623,32 @@ async function fetchRelevantData(
       if (custIds.length > 0) {
         q = q.in("customer_id", custIds);
 
-        // Named customer(s): also fetch pre-computed, deterministic per-customer
-        // aggregate totals — the raw invoice line items above are unreliable for
-        // the model to sum itself across potentially many records.
+        // Named customer(s) or sector: also fetch pre-computed, deterministic
+        // per-customer aggregate totals — the raw invoice line items above are
+        // unreliable for the model to sum itself across potentially many records.
         const { data: customerSummary, error: customerSummaryErr } = await supabase
           .from("v_ar_aging_current")
           .select("customer_id, company_name, current_amount, bucket_1_30, bucket_31_60, bucket_61_90, bucket_over_90, pre_petition_amount, total_outstanding, utilization_pct, risk_tier, credit_limit, total_invoice_count")
           .in("customer_id", custIds);
         if (customerSummaryErr) console.error("v_ar_aging_current query error:", customerSummaryErr.message);
         results.ar_aging_customer_summary = customerSummary ?? null;
+
+        if (custIdSource === "sector" && customerSummary && customerSummary.length > 0) {
+          // Sector-wide (not a named company): also pre-compute the summed sector
+          // total from the per-customer rows just fetched — otherwise the model
+          // would still have to sum up to 50 pre-computed rows itself.
+          results.ar_aging_sector_summary = {
+            sector: sector!,
+            count: customerSummary.length,
+            total_current: customerSummary.reduce((sum: number, c: any) => sum + (c.current_amount ?? 0), 0),
+            total_1_30: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_1_30 ?? 0), 0),
+            total_31_60: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_31_60 ?? 0), 0),
+            total_61_90: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_61_90 ?? 0), 0),
+            total_over_90: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_over_90 ?? 0), 0),
+            total_pre_petition: customerSummary.reduce((sum: number, c: any) => sum + (c.pre_petition_amount ?? 0), 0),
+            total_outstanding: customerSummary.reduce((sum: number, c: any) => sum + (c.total_outstanding ?? 0), 0),
+          };
+        }
       } else {
         q = q.lt("due_date", todayStr).not("status", "in", "(paid,written_off)");
 
@@ -565,14 +695,27 @@ async function fetchRelevantData(
     // payment_transactions — recent history for mentioned customers
     tables.has("payment_transactions") && (async () => {
       let custIds: string[] = [];
-      if (words.length > 0) {
-        const nameFilter = words.map(w => `company_name.ilike.%${w}%`).join(",");
+      let custIdSource: "named" | "sector" | "none" = "none";
+      if (companyMentions.length > 0) {
+        const nameFilter = companyMentions.map(w => `company_name.ilike.%${w}%`).join(",");
         const { data: matched, error: matchedErr } = await supabase
           .from("customers")
           .select("id")
           .or(nameFilter);
         if (matchedErr) console.error("customers matched error:", matchedErr.message);
         custIds = (matched ?? []).map((c: any) => c.id);
+        custIdSource = "named";
+      } else if (sector) {
+        // Sector-wide question (no named company): scope payment history to the
+        // sector's customers instead of the fully portfolio-wide branch — previously
+        // this branch had no sector awareness at all.
+        const { data: sectorMatched, error: sectorMatchedErr } = await supabase
+          .from("customers")
+          .select("id")
+          .eq("sector", sector);
+        if (sectorMatchedErr) console.error("customers sector-match error:", sectorMatchedErr.message);
+        custIds = (sectorMatched ?? []).map((c: any) => c.id);
+        custIdSource = "sector";
       }
 
       let q = supabase
@@ -584,14 +727,35 @@ async function fetchRelevantData(
       if (custIds.length > 0) {
         q = q.in("customer_id", custIds);
 
-        // Named customer(s): also fetch pre-computed, deterministic payment-behaviour
-        // aggregates — averaging/summing the raw transactions below is unreliable.
+        // Named customer(s) or sector: also fetch pre-computed, deterministic
+        // payment-behaviour aggregates — averaging/summing the raw transactions
+        // below is unreliable.
         const { data: behaviorSummary, error: behaviorSummaryErr } = await supabase
           .from("v_payment_behaviour")
           .select("customer_id, company_name, total_payments, total_paid_all_time, avg_days_to_pay, avg_days_early_late, on_time_payment_pct, last_payment_date, last_payment_amount")
           .in("customer_id", custIds);
         if (behaviorSummaryErr) console.error("v_payment_behaviour query error:", behaviorSummaryErr.message);
         results.payment_behavior_summary = behaviorSummary ?? null;
+
+        if (custIdSource === "sector" && behaviorSummary && behaviorSummary.length > 0) {
+          // Sector-wide (not a named company): also pre-compute the sector-wide
+          // totals/weighted averages from the per-customer rows just fetched —
+          // otherwise the model would still have to average up to 50 pre-computed
+          // rows itself. Rates are weighted by each customer's total_payments count
+          // rather than averaged naively, since transaction volumes vary widely.
+          const totalPayments = behaviorSummary.reduce((sum: number, c: any) => sum + (c.total_payments ?? 0), 0);
+          const weightedSum = (field: string) =>
+            behaviorSummary.reduce((sum: number, c: any) => sum + (c[field] ?? 0) * (c.total_payments ?? 0), 0);
+          results.payment_behavior_sector_summary = {
+            sector: sector!,
+            count: behaviorSummary.length,
+            total_payments: totalPayments,
+            total_paid_all_time: behaviorSummary.reduce((sum: number, c: any) => sum + (c.total_paid_all_time ?? 0), 0),
+            avg_days_to_pay: totalPayments > 0 ? Math.round((weightedSum("avg_days_to_pay") / totalPayments) * 10) / 10 : null,
+            avg_days_early_late: totalPayments > 0 ? Math.round((weightedSum("avg_days_early_late") / totalPayments) * 10) / 10 : null,
+            on_time_payment_pct: totalPayments > 0 ? Math.round((weightedSum("on_time_payment_pct") / totalPayments) * 10) / 10 : null,
+          };
+        }
       }
 
       const { data } = await q;
@@ -648,10 +812,10 @@ async function fetchRelevantData(
       // Filings are sources only when the question named a customer that has filings
       // (the fetch itself is unfiltered top-10, so we intersect with named customers
       // here to avoid over-sourcing portfolio/unknown-customer questions).
-      if (words.length > 0) {
+      if (companyMentions.length > 0) {
         results.sec_filings_matched = (data ?? []).filter((f: any) => {
           const cn = (f.customers?.company_name ?? "").toLowerCase();
-          return cn && words.some(w => cn.includes(w.toLowerCase()));
+          return cn && companyMentions.some(w => cn.includes(w.toLowerCase()));
         });
       }
     })(),
@@ -736,11 +900,15 @@ serve(async (req: Request) => {
 
     try {
 
-    // Route question to relevant tables
-    const tables = routeQuestion(question);
+    const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
+
+    // Extract table routing, company mentions, and sector via a dedicated LLM call
+    // (falls back to the old regex logic on any failure) — replaces the regex-only
+    // routeQuestion call as the primary path.
+    const { tables, company_mentions: companyMentions, sector } = await extractQuestionEntities(anthropic, question);
 
     // Fetch data from all relevant tables in parallel
-    const data = await fetchRelevantData(supabaseClient, question, tables, DEMO_MODE);
+    const data = await fetchRelevantData(supabaseClient, question, tables, DEMO_MODE, companyMentions, sector);
 
     // Build context string — sanitize all text fields to prevent JSON parse errors
     // in Claude's response (quotes, backslashes, newlines in DB fields break output JSON)
@@ -839,6 +1007,22 @@ serve(async (req: Request) => {
       );
     }
 
+    if (data.ar_aging_sector_summary) {
+      const s = data.ar_aging_sector_summary;
+      contextParts.push(
+        `## OFFICIAL AR AGING SECTOR TOTAL (pre-computed, deterministic — the authoritative summed total across all ${s.count} customers in the ${sanitize(s.sector)} sector; do not recompute by summing the per-customer rows above or the raw INVOICES TABLE yourself)\n` +
+        `- Sector: ${sanitize(s.sector)}\n` +
+        `- Customer count: ${s.count}\n` +
+        `- Current: $${Number(s.total_current).toLocaleString()}\n` +
+        `- 1-30 days overdue: $${Number(s.total_1_30).toLocaleString()}\n` +
+        `- 31-60 days overdue: $${Number(s.total_31_60).toLocaleString()}\n` +
+        `- 61-90 days overdue: $${Number(s.total_61_90).toLocaleString()}\n` +
+        `- 90+ days overdue: $${Number(s.total_over_90).toLocaleString()}\n` +
+        `- Pre-petition (bankruptcy, frozen): $${Number(s.total_pre_petition).toLocaleString()}\n` +
+        `- Total outstanding: $${Number(s.total_outstanding).toLocaleString()}`
+      );
+    }
+
     if (data.invoices.length > 0) {
       contextParts.push("## INVOICES TABLE\n" + data.invoices.map((inv: any, i: number) => {
         const tag = `I${i + 1}`;
@@ -862,6 +1046,20 @@ serve(async (req: Request) => {
         data.payment_behavior_summary.map((p: any) =>
           `- ${sanitize(p.company_name)}: total_payments=${p.total_payments ?? "N/A"}, total_paid_all_time=$${Number(p.total_paid_all_time ?? 0).toLocaleString()}, avg_days_to_pay=${p.avg_days_to_pay ?? "N/A"}, avg_days_early_late=${p.avg_days_early_late ?? "N/A"} (${(p.avg_days_early_late ?? 0) > 0 ? "late" : (p.avg_days_early_late ?? 0) < 0 ? "early" : "on time"}), on_time_rate=${p.on_time_payment_pct ?? "N/A"}%, last_payment=$${Number(p.last_payment_amount ?? 0).toLocaleString()} on ${p.last_payment_date ?? "N/A"}`
         ).join("\n")
+      );
+    }
+
+    if (data.payment_behavior_sector_summary) {
+      const s = data.payment_behavior_sector_summary;
+      contextParts.push(
+        `## OFFICIAL PAYMENT BEHAVIOR SECTOR TOTAL (pre-computed, deterministic — the authoritative combined figure across all ${s.count} customers in the ${sanitize(s.sector)} sector, with rates weighted by each customer's payment volume; do not recompute by averaging or summing the per-customer rows above or the raw PAYMENT TRANSACTIONS TABLE yourself)\n` +
+        `- Sector: ${sanitize(s.sector)}\n` +
+        `- Customer count: ${s.count}\n` +
+        `- Total payments: ${s.total_payments}\n` +
+        `- Total paid (all time): $${Number(s.total_paid_all_time).toLocaleString()}\n` +
+        `- Weighted avg days to pay: ${s.avg_days_to_pay ?? "N/A"}\n` +
+        `- Weighted avg days early/late: ${s.avg_days_early_late ?? "N/A"} (${(s.avg_days_early_late ?? 0) > 0 ? "late" : (s.avg_days_early_late ?? 0) < 0 ? "early" : "on time"})\n` +
+        `- Weighted on-time rate: ${s.on_time_payment_pct ?? "N/A"}%`
       );
     }
 
@@ -938,14 +1136,12 @@ serve(async (req: Request) => {
     const model = DEMO_MODE ? "claude-haiku-4-5" : "claude-sonnet-4-20250514";
     const maxTokens = DEMO_MODE ? 600 : 900;
 
-    const anthropic = new Anthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY")! });
-
     try {
       // ── Call 1: plain-text answer — never embedded in JSON ──────────────────
       const answerMessage = await anthropic.messages.create({
         model,
         max_tokens: maxTokens,
-        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. If asked for the combined exposure or credit limit of that high-risk set, use the combined figures stated in that section directly, not a manual sum. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. For a named customer's AR aging totals, use the OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) section the same way. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. When a question names two or more specific companies and asks for a combined or total figure across them, use the OFFICIAL COMBINED TOTAL — NAMED CUSTOMERS section directly, never sum the CUSTOMERS TABLE rows yourself. For a sector-wide total exposure or credit limit question (e.g. "total exposure to the aerospace sector"), use the OFFICIAL SECTOR EXPOSURE TOTAL section directly, never sum the CUSTOMERS TABLE rows yourself. For a named customer's payment history (average days to pay, on-time rate, total paid), use the pre-computed figures in the OFFICIAL PAYMENT BEHAVIOR TOTALS section directly — never re-derive them by averaging or summing the raw PAYMENT TRANSACTIONS TABLE yourself; use that raw table only to list or describe specific individual transactions when asked. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
+        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. If asked for the combined exposure or credit limit of that high-risk set, use the combined figures stated in that section directly, not a manual sum. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. For a named customer's AR aging totals, use the OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) section the same way. For a sector-wide AR aging or total-overdue question (e.g. "total overdue for the aerospace sector"), use the OFFICIAL AR AGING SECTOR TOTAL section directly — never sum the per-customer rows above it or the raw INVOICES TABLE yourself. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. When a question names two or more specific companies and asks for a combined or total figure across them, use the OFFICIAL COMBINED TOTAL — NAMED CUSTOMERS section directly, never sum the CUSTOMERS TABLE rows yourself. For a sector-wide total exposure or credit limit question (e.g. "total exposure to the aerospace sector"), use the OFFICIAL SECTOR EXPOSURE TOTAL section directly, never sum the CUSTOMERS TABLE rows yourself. For a named customer's payment history (average days to pay, on-time rate, total paid), use the pre-computed figures in the OFFICIAL PAYMENT BEHAVIOR TOTALS section directly — never re-derive them by averaging or summing the raw PAYMENT TRANSACTIONS TABLE yourself; use that raw table only to list or describe specific individual transactions when asked. For a sector-wide payment behavior question (e.g. "average days to pay for the aerospace sector"), use the OFFICIAL PAYMENT BEHAVIOR SECTOR TOTAL section directly, never average or sum the per-customer rows above it yourself. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
         messages: [{
           role: "user",
           content: `Question: ${question}\n\nData:\n${context || "No relevant data found."}`,
