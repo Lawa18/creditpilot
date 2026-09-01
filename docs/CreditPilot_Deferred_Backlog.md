@@ -1044,3 +1044,23 @@ Found live, by the founder testing "ar aging summary" repeatedly and noticing ge
 **Durable outcome:** CLAUDE.md created at the repo root (commit 45f38aa) -- read automatically at the start of every future session -- capturing this as a standing principle for all future agents/fields/features, not a one-off fix. Also closes the long-pending "CLAUDE.md to repo root" housekeeping item.
 
 Harness 8/8 maintained throughout all three waves.
+
+---
+
+## LLM-based CIA retrieval shipped, replacing regex-only routing (2026-08-31)
+
+The long-deferred retrieval redesign, following the citation redesign and arithmetic-reliability sweep from the prior session. Commit 80f9e07.
+
+**What shipped:** a new Haiku call (extractQuestionEntities) resolves company mentions, sector, and table routing in one language-agnostic pass, replacing routeQuestion's regex table-detection and fetchRelevantData's regex proper-noun/SECTOR_KEYWORDS extraction as the primary path -- the same structural weakness behind the earlier trigram-matching disqualification and the possessive-apostrophe hack ("Cascade's"). Extracts only the raw mentioned fragment, never a resolved canonical name -- the existing, proven ILIKE fuzzy DB search stays the sole source of truth for actual matching. Falls back to the exact prior regex behavior (preserved as regexFallbackExtraction, not deleted) on any extraction failure -- never a hard failure of the question.
+
+**Bundled in the same change, both closing gaps this change would otherwise have created or left open:**
+- Sector detection previously only applied to the customers table; invoices and payment_transactions had no sector awareness at all (a sector-scoped AR/payment question fell through to fully portfolio-wide). Now propagates correctly to all three.
+- That propagation would have created a new arithmetic-reliability gap per the CLAUDE.md principle -- a sector-scoped question would return up to ~50 pre-computed per-customer rows with no summed total, the model would have to sum/average them itself. Fixed in the same commit: new OFFICIAL AR AGING SECTOR TOTAL and OFFICIAL PAYMENT BEHAVIOR SECTOR TOTAL sections, the latter using volume-weighted averages (weighted by each customer's total_payments) rather than a naive average-of-averages, since transaction volumes vary widely across customers.
+
+**Verified live:**
+- German: "Sollte ich mir Sorgen um Arconic machen?" -- correctly extracted "Arconic" despite German capitalizing common nouns too ("Sorgen"), answered fully in German, 4 accurate sources.
+- French: "Quelle est notre exposition totale au secteur aérospatial?" -- correctly identified the Aerospace & Defense sector from "aérospatial" (accented, no lexical overlap with English keywords), answered in French, used the exact same $51,070,000 deterministic total already verified the prior session -- confirming this redesign integrates correctly with the arithmetic-reliability work rather than sitting apart from it.
+- Sector AR aging total: "What is the total overdue AR for the aerospace sector?" -- $6,850,000, byte-for-byte identical across 3 consecutive runs.
+- Harness 8/8 after deploy (one incidental failure on first post-deploy run, investigated and confirmed unrelated -- see below).
+
+**Found during verification, deliberately deferred, not yet fixed:** q3_utilization_aggregation intermittently omits real, correct high-utilization customers (Ironwood 123%, Cascade 196%) that are consistently present in the underlying data -- confirmed via 3 repeated runs, 2 of which correctly named both. Investigated and confirmed this is NOT caused by this session's changes (the portfolio-wide customer fallback path is identical whether routed by regex or LLM for a no-company-named question), and is the same shape of problem as the RISK_FLAG=HIGH inconsistency fixed the prior session -- the model inconsistently selecting from a set it should name completely, just for a different criterion (utilization threshold rather than the locked V1 risk rule). Queued as the next fix, same session.
