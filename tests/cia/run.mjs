@@ -17,17 +17,17 @@ if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   process.exit(1);
 }
 
-const ENDPOINT = `${SUPABASE_URL}/functions/v1/cia-agent`;
+export const ENDPOINT = `${SUPABASE_URL}/functions/v1/cia-agent`;
 
 // ── Load questions ─────────────────────────────────────────────────────────
 
-const { questions } = JSON.parse(
+export const { questions } = JSON.parse(
   await readFile(resolve(__dir, "questions.json"), "utf8")
 );
 
 // ── Ask one question ───────────────────────────────────────────────────────
 
-async function askQuestion(question) {
+export async function askQuestion(question) {
   const start = Date.now();
   const res = await fetch(ENDPOINT, {
     method: "POST",
@@ -50,7 +50,7 @@ async function askQuestion(question) {
 
 // ── Evaluate expectations ──────────────────────────────────────────────────
 
-function evaluate(response, expected) {
+export function evaluate(response, expected) {
   const failures = [];
   const answer = (response.answer ?? "").toLowerCase();
   const sources = Array.isArray(response.sources) ? response.sources : [];
@@ -104,6 +104,11 @@ function evaluate(response, expected) {
 }
 
 // ── Main ───────────────────────────────────────────────────────────────────
+// Guarded so this file can be imported (e.g. by consistency-check.mjs, which
+// reuses askQuestion/evaluate above) without also triggering a full test run
+// as a side effect — `node tests/cia/run.mjs` still behaves identically.
+
+if (import.meta.url === `file://${process.argv[1]}`) {
 
 const results = [];
 let passed = 0;
@@ -184,3 +189,5 @@ if (failed > 0) {
 }
 
 console.log();
+
+}

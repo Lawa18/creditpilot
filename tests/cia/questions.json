@@ -9,6 +9,9 @@
         "must_mention": ["McDermott", "Rite Aid", "Proterra", "Yellow"],
         "must_not_say": ["I don't have"],
         "expected_confidence": ["High", "Medium"]
+      },
+      "consistency_check": {
+        "min_pass_rate": 0.75
       }
     },
     {
@@ -29,7 +32,8 @@
         "must_mention": ["Ironwood", "Kaman"],
         "must_not_say": ["I don't have"],
         "expected_confidence": ["High", "Medium"]
-      }
+      },
+      "consistency_check": {}
     },
     {
       "id": "q4_negative_news",
@@ -59,7 +63,8 @@
         "must_mention": ["aerospace"],
         "must_not_say": ["I don't have", "supplier"],
         "expected_confidence": ["High", "Medium"]
-      }
+      },
+      "consistency_check": {}
     },
     {
       "id": "q7_specific_customer_filings",
