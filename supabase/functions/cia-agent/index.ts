@@ -450,7 +450,6 @@ interface RetrievedData {
   customers: any[];
   customers_combined_total: { count: number; company_names: string[]; total_credit_limit: number; total_current_exposure: number } | null;
   customers_sector_total: { sector: string; count: number; total_credit_limit: number; total_current_exposure: number } | null;
-  utilization_scan_customers: any[] | null;
   invoices: any[];
   ar_aging_portfolio_summary: any | null;
   ar_aging_customer_summary: any[] | null;
@@ -511,7 +510,6 @@ async function fetchRelevantData(
     customers: [],
     customers_combined_total: null,
     customers_sector_total: null,
-    utilization_scan_customers: null,
     invoices: [],
     ar_aging_portfolio_summary: null,
     ar_aging_customer_summary: null,
@@ -606,20 +604,14 @@ async function fetchRelevantData(
       } else {
         // Portfolio-level question — return risk-ranked customers (V1 rule, B5).
         // fn_rank_portfolio_risk: high-risk set first, then remaining by exposure.
-        // Fired in parallel with a separate, complete, minimal-column scan of ALL
-        // customers — fn_rank_portfolio_risk is deliberately scoped to the locked
-        // V1 credit-risk rule (score<30/bankruptcy) and only returns a subset
-        // (confirmed live: ~25 of 59 customers), so it cannot be used to find
-        // high-utilization customers outside that rule's scope. Do not widen
-        // fn_rank_portfolio_risk itself for this unrelated purpose.
-        const [{ data, error }, { data: scanData, error: scanErr }] = await Promise.all([
-          supabase.rpc('fn_rank_portfolio_risk'),
-          supabase.from('customers').select('id, company_name, credit_limit, current_exposure'),
-        ]);
+        // Previously LIMIT 25'd (missing ~34 of 59 customers) — removed in
+        // migration 20260902000000, so this is now the complete customer set,
+        // same as the named/sector branches. The separate minimal-column
+        // utilization scan that used to compensate for that gap is no longer
+        // needed and has been removed.
+        const { data, error } = await supabase.rpc('fn_rank_portfolio_risk');
         if (error) console.error('portfolio risk ranking error:', error.message);
         results.customers = data ?? [];
-        if (scanErr) console.error('utilization scan error:', scanErr.message);
-        results.utilization_scan_customers = scanData ?? null;
       }
     })(),
 
@@ -1005,36 +997,13 @@ serve(async (req: Request) => {
       // (a dense 88-97% cluster vs. a normal 55-80% band), and matches this project's
       // own DEMO_BRIEFING copy, which already calls 87% "approaching".
       //
-      // IMPORTANT: for a portfolio-wide question, data.customers is fn_rank_portfolio_risk()'s
-      // output — deliberately scoped to the locked V1 risk rule, not utilization (confirmed
-      // live: it returns only ~25 of 59 customers, missing this portfolio's two most extreme
-      // utilization cases entirely). Filtering customerLines here would silently miss any
-      // high-utilization customer outside that RPC's scope. When data.utilization_scan_customers
-      // is present (the portfolio-wide branch's separate, complete, minimal-column fetch), use
-      // it instead, minting fresh U-tags. Named-customer/sector branches don't have this gap
-      // (their data.customers is already complete for that scope), so they keep reusing
-      // customerLines' existing C-tags via the fallback below.
-      const utilCandidates: { tag: string; company_name: string | null; credit_limit: number | null; current_exposure: number | null }[] =
-        (data.utilization_scan_customers && data.utilization_scan_customers.length > 0)
-          ? data.utilization_scan_customers.map((c: any, i: number) => {
-              const tag = `U${i + 1}`;
-              tagMap.set(tag, {
-                table: "customers",
-                id: c.id ?? null,
-                customer_id: c.id ?? null,
-                customer_name: c.company_name ?? null,
-                event_type: null,
-                severity: null,
-                date: null,
-                agent: null,
-              });
-              return { tag, company_name: c.company_name, credit_limit: c.credit_limit, current_exposure: c.current_exposure };
-            })
-          : customerLines.map(({ tag, customer: c }) => ({ tag, company_name: c.company_name, credit_limit: c.credit_limit, current_exposure: c.current_exposure }));
-
-      highUtilizationLines = utilCandidates.filter((c) =>
-        (c.credit_limit ?? 0) > 0 && ((c.current_exposure ?? 0) / (c.credit_limit as number)) >= 0.85
-      );
+      // data.customers is complete for every branch (named, sector, and portfolio-wide
+      // since fn_rank_portfolio_risk's LIMIT 25 was removed in migration 20260902000000),
+      // so customerLines can be filtered directly — no separate complete-data-source
+      // fallback needed anymore.
+      highUtilizationLines = customerLines
+        .map(({ tag, customer: c }) => ({ tag, company_name: c.company_name, credit_limit: c.credit_limit, current_exposure: c.current_exposure }))
+        .filter((c) => (c.credit_limit ?? 0) > 0 && ((c.current_exposure ?? 0) / (c.credit_limit as number)) >= 0.85);
       if (highUtilizationLines.length > 0) {
         contextParts.push(
           `## OFFICIAL HIGH-UTILIZATION CUSTOMER LIST (computed from credit_limit/current_exposure across the complete customer set, threshold utilization >= 85% — the complete, authoritative answer to any "approaching their credit limit" / "near their limit" / "over their credit limit" question)\n` +
