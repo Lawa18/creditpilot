@@ -238,8 +238,7 @@ CREATE FUNCTION public.fn_rank_portfolio_risk() RETURNS TABLE(id uuid, company_n
     c.current_exposure DESC,
     COALESCE(sev.recent_severity_sum,0) DESC,
     COALESCE(sev.latest_event_date, ea.latest_event_date_all) DESC NULLS LAST,
-    c.company_name
-  LIMIT 25;
+    c.company_name;
 $$;
 
 
