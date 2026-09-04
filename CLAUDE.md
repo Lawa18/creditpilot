@@ -27,3 +27,16 @@ counting more than a couple of raw records?" If yes, pre-compute it first.
 Reference implementation: supabase/functions/cia-agent/index.ts — search for
 "OFFICIAL AR AGING PORTFOLIO TOTALS", "OFFICIAL SECTOR EXPOSURE TOTAL", "OFFICIAL
 COMBINED TOTAL", "OFFICIAL PAYMENT BEHAVIOR TOTALS" for the pattern to copy.
+
+## Never print credential values
+
+If checking whether an environment variable is set (DATABASE_URL, API keys, any
+credential), only ever show the variable NAME, never its value -- e.g.
+`env | grep -i database | cut -d= -f1`, never a bare `env | grep`. Postgres connection
+strings embed the password directly in the URL, so printing the full line exposes it.
+If a credential is ever accidentally displayed anyway, flag it immediately and
+recommend rotation right away -- don't wait to be asked.
+
+Found the hard way: an `env | grep` command printed a live DATABASE_URL, including
+its password, into a session transcript on 2026-09-03. The founder rotated the
+credential afterward.
