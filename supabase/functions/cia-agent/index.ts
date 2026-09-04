@@ -445,6 +445,7 @@ The question may be in any language — extract meaning and intent, not just Eng
 interface RetrievedData {
   credit_events: any[];
   credit_events_matched: any[];
+  multi_signal_convergence: any[] | null;
   negative_news_matched: any[];
   sec_filings_matched: any[];
   customers: any[];
@@ -505,6 +506,7 @@ async function fetchRelevantData(
   const results: RetrievedData = {
     credit_events: [],
     credit_events_matched: [],
+    multi_signal_convergence: null,
     negative_news_matched: [],
     sec_filings_matched: [],
     customers: [],
@@ -523,8 +525,13 @@ async function fetchRelevantData(
 
   await Promise.allSettled([
 
-    // credit_events — keyword search on title + description
+    // credit_events — keyword search on title + description, plus the deterministic
+    // multi-signal convergence RPC fired in parallel (same 90-day window, see
+    // fn_multi_signal_convergence — GROUP BY + HAVING is correct at any table size,
+    // unlike inferring convergence from this keyword/fallback query's own row cap).
     tables.has("credit_events") && (async () => {
+      const ninetyDaysAgoISOString = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
       const orFilter = keywords.flatMap(kw => [
         `title.ilike.%${kw}%`,
         `description.ilike.%${kw}%`,
@@ -534,23 +541,36 @@ async function fetchRelevantData(
         .from("credit_events")
         .select("id, customer_id, event_type, severity, source_agent, title, description, payload, created_at, customers!left(company_name, credit_limit, current_exposure)")
         .eq("is_demo", demoMode)
+        .gte("created_at", ninetyDaysAgoISOString)
         .order("severity_score", { ascending: false, nullsFirst: false })
         .order("created_at", { ascending: false })
-        .limit(30);
+        .limit(300);
 
-      if (keywords.length > 0) {
-        const { data: filtered, error: filteredErr } = await baseQuery().or(orFilter);
-        if (filteredErr) console.error("credit_events filter error:", filteredErr.message);
-        if (filtered && filtered.length >= 2) {
-          // Genuinely keyword-matched events — these are the attributable sources.
-          results.credit_events_matched = filtered;
-          results.credit_events = filtered;
-          return;
-        }
+      const [creditEventsResult, convergenceResult] = await Promise.all([
+        (async () => {
+          if (keywords.length > 0) {
+            const { data: filtered, error: filteredErr } = await baseQuery().or(orFilter);
+            if (filteredErr) console.error("credit_events filter error:", filteredErr.message);
+            if (filtered && filtered.length >= 2) {
+              // Genuinely keyword-matched events — these are the attributable sources.
+              return { matched: filtered, events: filtered };
+            }
+          }
+          const { data: fallback, error: fallbackErr } = await baseQuery();
+          if (fallbackErr) console.error("credit_events fallback error:", fallbackErr.message);
+          return { matched: null as any[] | null, events: fallback ?? [] };
+        })(),
+        supabase.rpc("fn_multi_signal_convergence", { p_is_demo: demoMode }),
+      ]);
+
+      if (creditEventsResult.matched) {
+        results.credit_events_matched = creditEventsResult.matched;
       }
-      const { data: fallback, error: fallbackErr } = await baseQuery();
-      if (fallbackErr) console.error("credit_events fallback error:", fallbackErr.message);
-      results.credit_events = fallback ?? [];
+      results.credit_events = creditEventsResult.events;
+
+      const { data: convergenceData, error: convergenceErr } = convergenceResult;
+      if (convergenceErr) console.error("fn_multi_signal_convergence error:", convergenceErr.message);
+      results.multi_signal_convergence = convergenceData ?? null;
     })(),
 
     // customers — search by name or return top 20 by credit_limit (highest exposure first)
@@ -1169,6 +1189,26 @@ serve(async (req: Request) => {
       }).join("\n"));
     }
 
+    if (data.multi_signal_convergence && data.multi_signal_convergence.length > 0) {
+      contextParts.push(
+        `## OFFICIAL MULTI-SIGNAL CONVERGENCE LIST (pre-computed, deterministic — the complete and authoritative answer to any "which customers are flagged by multiple agents" / "multi-signal convergence" question; computed via GROUP BY + HAVING over the full 90-day credit_events window, not inferred from the CREDIT EVENTS TABLE below, which is not guaranteed to include every qualifying event for this purpose)\n` +
+        data.multi_signal_convergence.map((row: any, i: number) => {
+          const tag = `M${i + 1}`;
+          tagMap.set(tag, {
+            table: "customers",
+            id: row.customer_id ?? null,
+            customer_id: row.customer_id ?? null,
+            customer_name: row.company_name ?? null,
+            event_type: null,
+            severity: null,
+            date: row.latest_event_date ? String(row.latest_event_date).slice(0, 10) : null,
+            agent: null,
+          });
+          return `- [${tag}] ${sanitize(row.company_name)}: flagged by ${row.distinct_agent_count} agents (${(row.agents ?? []).map(sanitize).join(", ")}), ${row.event_count} events, max_severity_score=${row.max_severity_score ?? "N/A"}, latest_event=${row.latest_event_date ? String(row.latest_event_date).slice(0, 10) : "N/A"}`;
+        }).join("\n")
+      );
+    }
+
     if (data.credit_events.length > 0) {
       contextParts.push("## CREDIT EVENTS TABLE\n" + data.credit_events.map((e: any, i: number) => {
         const tag = `E${i + 1}`;
@@ -1196,7 +1236,7 @@ serve(async (req: Request) => {
       const answerMessage = await anthropic.messages.create({
         model,
         max_tokens: maxTokens,
-        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. If asked for the combined exposure or credit limit of that high-risk set, use the combined figures stated in that section directly, not a manual sum. When asked broadly whether any customers are approaching or over their credit limit (not about one named customer), do not name individual customers, percentages, or a count yourself from the OFFICIAL HIGH-UTILIZATION CUSTOMER LIST section — reproducing that list from memory is unreliable. Instead, write one brief intro sentence acknowledging the question, then insert the exact literal text {{HIGH_UTILIZATION_LIST}} alone, on its own line — the real list will be inserted automatically afterward. If the question does not call for the complete list (e.g. it's about one named customer, or unrelated to utilization or credit-limit proximity), do not include the placeholder at all. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. For a named customer's AR aging totals, use the OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) section the same way. For a sector-wide AR aging or total-overdue question (e.g. "total overdue for the aerospace sector"), use the OFFICIAL AR AGING SECTOR TOTAL section directly — never sum the per-customer rows above it or the raw INVOICES TABLE yourself. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. When a question names two or more specific companies and asks for a combined or total figure across them, use the OFFICIAL COMBINED TOTAL — NAMED CUSTOMERS section directly, never sum the CUSTOMERS TABLE rows yourself. For a sector-wide total exposure or credit limit question (e.g. "total exposure to the aerospace sector"), use the OFFICIAL SECTOR EXPOSURE TOTAL section directly, never sum the CUSTOMERS TABLE rows yourself. For a named customer's payment history (average days to pay, on-time rate, total paid), use the pre-computed figures in the OFFICIAL PAYMENT BEHAVIOR TOTALS section directly — never re-derive them by averaging or summing the raw PAYMENT TRANSACTIONS TABLE yourself; use that raw table only to list or describe specific individual transactions when asked. For a sector-wide payment behavior question (e.g. "average days to pay for the aerospace sector"), use the OFFICIAL PAYMENT BEHAVIOR SECTOR TOTAL section directly, never average or sum the per-customer rows above it yourself. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
+        system: `You are the Credit Intelligence Agent (CIA) for CreditPilot — a credit analyst answering questions about a B2B trade credit portfolio. Answer ONLY from the data provided. Every record in the data below has a bracketed reference tag (e.g. [E3], [C7], [N1]). After each specific factual claim, cite the exact tag(s) supporting it in brackets immediately after the claim, e.g. "utilization is 91.7% [E3]" or "flagged by two agents [E3, N1]". Cite every tag that supports each claim, using multiple tags when multiple records support one claim. Always cite tags individually, comma-separated — never use a dash or range between two tags (e.g. write [P1, P2, P3], never [P1–P3]). Only ever cite tags that actually appear in the data provided — never invent a tag. These tags are for internal verification and will be removed before the user sees your answer, so cite generously and precisely without worrying about how it reads. Be specific with exact amounts, dates, and percentages. When asked broadly which customers are highest-risk or most at-risk across the whole portfolio (not about one named customer), the customers table's RISK_FLAG=HIGH marker is the authoritative, business-approved answer — always name every RISK_FLAG=HIGH customer in your response. You may add supporting detail from credit_events, but never substitute a different framing (e.g. ranking by most recent event, or by utilization percentage alone) for the complete RISK_FLAG=HIGH list. If asked for the combined exposure or credit limit of that high-risk set, use the combined figures stated in that section directly, not a manual sum. When asked broadly whether any customers are approaching or over their credit limit (not about one named customer), do not name individual customers, percentages, or a count yourself from the OFFICIAL HIGH-UTILIZATION CUSTOMER LIST section — reproducing that list from memory is unreliable. Instead, write one brief intro sentence acknowledging the question, then insert the exact literal text {{HIGH_UTILIZATION_LIST}} alone, on its own line — the real list will be inserted automatically afterward. If the question does not call for the complete list (e.g. it's about one named customer, or unrelated to utilization or credit-limit proximity), do not include the placeholder at all. For portfolio-wide AR aging or total-exposure questions (not about one named customer), use the pre-computed totals in the OFFICIAL AR AGING PORTFOLIO TOTALS section directly — never re-derive these totals by summing individual invoice line items yourself, since manual summation across many records is unreliable. For a named customer's AR aging totals, use the OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) section the same way. For a sector-wide AR aging or total-overdue question (e.g. "total overdue for the aerospace sector"), use the OFFICIAL AR AGING SECTOR TOTAL section directly — never sum the per-customer rows above it or the raw INVOICES TABLE yourself. Use the raw INVOICES TABLE only to name or describe specific individual invoices when asked, not to recompute aggregate totals. When a question names two or more specific companies and asks for a combined or total figure across them, use the OFFICIAL COMBINED TOTAL — NAMED CUSTOMERS section directly, never sum the CUSTOMERS TABLE rows yourself. For a sector-wide total exposure or credit limit question (e.g. "total exposure to the aerospace sector"), use the OFFICIAL SECTOR EXPOSURE TOTAL section directly, never sum the CUSTOMERS TABLE rows yourself. For a named customer's payment history (average days to pay, on-time rate, total paid), use the pre-computed figures in the OFFICIAL PAYMENT BEHAVIOR TOTALS section directly — never re-derive them by averaging or summing the raw PAYMENT TRANSACTIONS TABLE yourself; use that raw table only to list or describe specific individual transactions when asked. For a sector-wide payment behavior question (e.g. "average days to pay for the aerospace sector"), use the OFFICIAL PAYMENT BEHAVIOR SECTOR TOTAL section directly, never average or sum the per-customer rows above it yourself. For questions asking which customers are flagged by multiple agents, or about multi-signal convergence, use the OFFICIAL MULTI-SIGNAL CONVERGENCE LIST section directly — it's the complete, authoritative answer computed over the full 90-day window; never infer convergence by counting agents per customer from the raw CREDIT EVENTS TABLE yourself, since that table is not guaranteed to include every qualifying event. If data does not contain the answer say exactly: I don't have that information in the current data. Do NOT characterize a customer's relationship status (active, inactive, outside the portfolio, former, prospect, etc.) unless the data explicitly states it. Every company in the customers table is a current customer. If you don't know a customer's relationship status, don't mention it — just present the facts. Never use the words 'supplier', 'suppliers', 'vendor', 'vendors', or any 'tier-N' phrasing (tier-1, tier-2, etc.) anywhere in your response. This applies to ALL uses — including generic plurals like 'multiple suppliers' or 'aerospace suppliers', industry-structure descriptions like 'Tier-1 supplier', and any other context. Refer to companies in the customers table only as 'customers', 'companies', or 'accounts'. The word 'supplier' must never appear in your output. Keep response under 120 words. Exception: if the question asks to list, enumerate, or itemize individual records (e.g. every invoice, every transaction) rather than a summary, pull from the specific raw data table (not aggregate event summaries) and list up to 15 individual items with their specific values — this may exceed 120 words. If more than 15 matching records exist, list the first 15 and state the total count. This exception also applies to questions asking which customers or companies meet a broad criterion across the whole portfolio (e.g. "highest risk", "over their credit limit", "in the aerospace sector") — name every matching customer completely, even if that exceeds 120 words; do not truncate or cap this type of complete-set answer. Use markdown with **bold key terms**. Plain text output only — no JSON.`,
         messages: [{
           role: "user",
           content: `Question: ${question}\n\nData:\n${context || "No relevant data found."}`,
@@ -1224,7 +1264,7 @@ serve(async (req: Request) => {
       while ((bracketMatch = bracketPattern.exec(answerText)) !== null) {
         for (const piece of bracketMatch[1].split(",")) {
           const tag = piece.trim();
-          if (/^[CIPNFEU]\d+$/.test(tag)) citedTags.add(tag);
+          if (/^[CIPNFEUM]\d+$/.test(tag)) citedTags.add(tag);
         }
       }
       const verifiedTags = [...citedTags].filter(t => tagMap.has(t));
@@ -1233,7 +1273,7 @@ serve(async (req: Request) => {
       // tag-range (e.g. "P1-P8", "P1–8") is still tag-shaped and should never leak into
       // the visible answer as a raw artifact, even though a range is never treated as a
       // verified citation (citedTags/verifiedTags above stay strict, unchanged).
-      const tagOrRangePattern = /^[CIPNFEU]\d+(\s*[-–—]\s*[CIPNFEU]?\d+)?$/;
+      const tagOrRangePattern = /^[CIPNFEUM]\d+(\s*[-–—]\s*[CIPNFEUM]?\d+)?$/;
 
       const cleanAnswerText = answerText
         .replace(/\[([^\]]+)\]/g, (full, inner) =>
