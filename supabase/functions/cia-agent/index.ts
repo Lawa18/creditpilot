@@ -454,7 +454,7 @@ interface RetrievedData {
   invoices: any[];
   ar_aging_portfolio_summary: any | null;
   ar_aging_customer_summary: any[] | null;
-  ar_aging_sector_summary: { sector: string; count: number; total_current: number; total_1_30: number; total_31_60: number; total_61_90: number; total_over_90: number; total_pre_petition: number; total_outstanding: number } | null;
+  ar_aging_sector_summary: { sector: string; count: number; total_current: number; total_1_30: number; total_31_60: number; total_61_90: number; total_over_90: number; total_pre_petition: number; total_outstanding: number; current_count: number; bucket_1_30_count: number; bucket_31_60_count: number; bucket_61_90_count: number; bucket_over_90_count: number } | null;
   payment_transactions: any[];
   payment_behavior_summary: any[] | null;
   payment_behavior_sector_summary: { sector: string; count: number; total_payments: number; total_paid_all_time: number; avg_days_to_pay: number | null; avg_days_early_late: number | null; on_time_payment_pct: number | null } | null;
@@ -676,7 +676,7 @@ async function fetchRelevantData(
         // unreliable for the model to sum itself across potentially many records.
         const { data: customerSummary, error: customerSummaryErr } = await supabase
           .from("v_ar_aging_current")
-          .select("customer_id, company_name, current_amount, bucket_1_30, bucket_31_60, bucket_61_90, bucket_over_90, pre_petition_amount, total_outstanding, utilization_pct, risk_tier, credit_limit, total_invoice_count")
+          .select("customer_id, company_name, current_amount, bucket_1_30, bucket_31_60, bucket_61_90, bucket_over_90, pre_petition_amount, total_outstanding, utilization_pct, risk_tier, credit_limit, total_invoice_count, current_count, bucket_1_30_count, bucket_31_60_count, bucket_61_90_count, bucket_over_90_count")
           .in("customer_id", custIds);
         if (customerSummaryErr) console.error("v_ar_aging_current query error:", customerSummaryErr.message);
         results.ar_aging_customer_summary = customerSummary ?? null;
@@ -695,6 +695,11 @@ async function fetchRelevantData(
             total_over_90: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_over_90 ?? 0), 0),
             total_pre_petition: customerSummary.reduce((sum: number, c: any) => sum + (c.pre_petition_amount ?? 0), 0),
             total_outstanding: customerSummary.reduce((sum: number, c: any) => sum + (c.total_outstanding ?? 0), 0),
+            current_count: customerSummary.reduce((sum: number, c: any) => sum + (c.current_count ?? 0), 0),
+            bucket_1_30_count: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_1_30_count ?? 0), 0),
+            bucket_31_60_count: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_31_60_count ?? 0), 0),
+            bucket_61_90_count: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_61_90_count ?? 0), 0),
+            bucket_over_90_count: customerSummary.reduce((sum: number, c: any) => sum + (c.bucket_over_90_count ?? 0), 0),
           };
         }
       } else {
@@ -1077,7 +1082,7 @@ serve(async (req: Request) => {
       contextParts.push(
         `## OFFICIAL AR AGING TOTALS — NAMED CUSTOMER(S) (pre-computed, deterministic — the authoritative answer to a named customer's total overdue balance or aging-bucket breakdown; do not recompute these by summing individual invoices)\n` +
         data.ar_aging_customer_summary.map((s: any) =>
-          `- ${sanitize(s.company_name)}: current=$${Number(s.current_amount ?? 0).toLocaleString()}, 1-30=$${Number(s.bucket_1_30 ?? 0).toLocaleString()}, 31-60=$${Number(s.bucket_31_60 ?? 0).toLocaleString()}, 61-90=$${Number(s.bucket_61_90 ?? 0).toLocaleString()}, 90+=$${Number(s.bucket_over_90 ?? 0).toLocaleString()}, pre_petition=$${Number(s.pre_petition_amount ?? 0).toLocaleString()}, total_outstanding=$${Number(s.total_outstanding ?? 0).toLocaleString()}, utilization=${s.utilization_pct ?? "N/A"}%, risk_tier=${s.risk_tier ?? "N/A"}, invoice_count=${s.total_invoice_count ?? "N/A"}`
+          `- ${sanitize(s.company_name)}: current=$${Number(s.current_amount ?? 0).toLocaleString()} (${s.current_count ?? "N/A"} invoices), 1-30=$${Number(s.bucket_1_30 ?? 0).toLocaleString()} (${s.bucket_1_30_count ?? "N/A"} invoices), 31-60=$${Number(s.bucket_31_60 ?? 0).toLocaleString()} (${s.bucket_31_60_count ?? "N/A"} invoices), 61-90=$${Number(s.bucket_61_90 ?? 0).toLocaleString()} (${s.bucket_61_90_count ?? "N/A"} invoices), 90+=$${Number(s.bucket_over_90 ?? 0).toLocaleString()} (${s.bucket_over_90_count ?? "N/A"} invoices), pre_petition=$${Number(s.pre_petition_amount ?? 0).toLocaleString()}, total_outstanding=$${Number(s.total_outstanding ?? 0).toLocaleString()}, utilization=${s.utilization_pct ?? "N/A"}%, risk_tier=${s.risk_tier ?? "N/A"}, invoice_count=${s.total_invoice_count ?? "N/A"}`
         ).join("\n")
       );
     }
@@ -1088,11 +1093,11 @@ serve(async (req: Request) => {
         `## OFFICIAL AR AGING SECTOR TOTAL (pre-computed, deterministic — the authoritative summed total across all ${s.count} customers in the ${sanitize(s.sector)} sector; do not recompute by summing the per-customer rows above or the raw INVOICES TABLE yourself)\n` +
         `- Sector: ${sanitize(s.sector)}\n` +
         `- Customer count: ${s.count}\n` +
-        `- Current: $${Number(s.total_current).toLocaleString()}\n` +
-        `- 1-30 days overdue: $${Number(s.total_1_30).toLocaleString()}\n` +
-        `- 31-60 days overdue: $${Number(s.total_31_60).toLocaleString()}\n` +
-        `- 61-90 days overdue: $${Number(s.total_61_90).toLocaleString()}\n` +
-        `- 90+ days overdue: $${Number(s.total_over_90).toLocaleString()}\n` +
+        `- Current: $${Number(s.total_current).toLocaleString()} (${s.current_count ?? "N/A"} invoices)\n` +
+        `- 1-30 days overdue: $${Number(s.total_1_30).toLocaleString()} (${s.bucket_1_30_count ?? "N/A"} invoices)\n` +
+        `- 31-60 days overdue: $${Number(s.total_31_60).toLocaleString()} (${s.bucket_31_60_count ?? "N/A"} invoices)\n` +
+        `- 61-90 days overdue: $${Number(s.total_61_90).toLocaleString()} (${s.bucket_61_90_count ?? "N/A"} invoices)\n` +
+        `- 90+ days overdue: $${Number(s.total_over_90).toLocaleString()} (${s.bucket_over_90_count ?? "N/A"} invoices)\n` +
         `- Pre-petition (bankruptcy, frozen): $${Number(s.total_pre_petition).toLocaleString()}\n` +
         `- Total outstanding: $${Number(s.total_outstanding).toLocaleString()}`
       );
