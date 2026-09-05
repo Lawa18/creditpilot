@@ -1,6 +1,6 @@
 # CreditPilot — Customer Profile Fields (V1 → V2 plan)
 
-**Status:** Design locked for onboarding-form fields. Onboarding-workflow fields are V2/V3, logged not built.
+**Status:** Schema fully applied — all 9 new columns plus the `tax_id` identifier-type constraint are live (migration `20260828000000_customer_profile_fields.sql`, commit 29e8bc6). Design locked for onboarding-form fields. The "Add Customer" UI that will populate these fields is deliberately deferred to its own future session (already logged, 2026-08-16). Onboarding-workflow fields (Section 6) are V2/V3, logged not built.
 **Decision date:** 2026-08-27
 **Scope:** The complete reference for every field that makes up a customer's profile — combining the existing `customers`/`customer_identifiers` schema with the new onboarding template — and where each one lives.
 
@@ -30,7 +30,7 @@ A customer profile has two genuinely different categories, and this doc keeps th
 | Internal Customer ID | Existing (`internal_customer_code`), **elevated to its own dedicated field** | "The customer's own internal code in their ERP for this entity" — already documented as the future ERP-sync key. Nearly every enterprise customer will have one, so it gets the same prominence as DUNS. |
 | Additional Identifier (type + value) | Existing table (`customer_identifiers`), **vocabulary expanded** | Covers CIK, LEI, ticker, and now **tax_id** (new — not previously in the `id_type` CHECK constraint). The onboarding template captures one additional identifier at intake; a customer needing more than one gets the rest added after onboarding, through the app itself (see "Add Customer" below). |
 
-**Schema change required:** `customer_identifiers.id_type`'s CHECK constraint needs `'tax_id'` added to its allowed values (`duns`, `ticker`, `cik`, `lei`, `internal_customer_code`, `tax_id`). Not applied this session — this doc records the requirement for whoever builds the "Add Customer" feature (already logged separately in the deferred backlog, 2026-08-16).
+**Schema change applied:** `customer_identifiers.id_type`'s CHECK constraint now includes `'tax_id'` (`duns`, `ticker`, `cik`, `lei`, `internal_customer_code`, `tax_id`) — added by migration `20260828000000_customer_profile_fields.sql` (commit 29e8bc6). The "Add Customer" feature (already logged separately in the deferred backlog, 2026-08-16) can rely on this constraint already accepting `tax_id`.
 
 ---
 
@@ -122,7 +122,6 @@ Listed here only so nothing looks lost — none of these change as a result of t
 
 ## Not done this session (real follow-up work)
 
-- The `tax_id` schema migration (CHECK constraint update)
 - The `headquarters` deprecation migration + backfill
 - Building the actual "Add Customer" UI that this template's fields will eventually populate (already its own logged, dedicated session)
 - Any of the Onboarding & Compliance (Section 6) fields as real schema/UI
