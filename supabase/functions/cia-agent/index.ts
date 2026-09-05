@@ -1066,11 +1066,11 @@ serve(async (req: Request) => {
       const s = data.ar_aging_portfolio_summary;
       contextParts.push(
         `## OFFICIAL AR AGING PORTFOLIO TOTALS (pre-computed, deterministic — the complete and authoritative answer to any portfolio-wide "total overdue" / "total exposure" / "aging summary" question; do not recompute these by summing individual invoices)\n` +
-        `- Current: $${Number(s.total_current ?? 0).toLocaleString()} (${s.pct_current ?? 0}%)\n` +
-        `- 1-30 days overdue: $${Number(s.total_1_30 ?? 0).toLocaleString()} (${s.pct_1_30 ?? 0}%)\n` +
-        `- 31-60 days overdue: $${Number(s.total_31_60 ?? 0).toLocaleString()} (${s.pct_31_60 ?? 0}%)\n` +
-        `- 61-90 days overdue: $${Number(s.total_61_90 ?? 0).toLocaleString()} (${s.pct_61_90 ?? 0}%)\n` +
-        `- 90+ days overdue: $${Number(s.total_over_90 ?? 0).toLocaleString()} (${s.pct_over_90 ?? 0}%)\n` +
+        `- Current: $${Number(s.total_current ?? 0).toLocaleString()} (${s.pct_current ?? 0}%, ${s.total_current_count ?? "N/A"} invoices)\n` +
+        `- 1-30 days overdue: $${Number(s.total_1_30 ?? 0).toLocaleString()} (${s.pct_1_30 ?? 0}%, ${s.total_bucket_1_30_count ?? "N/A"} invoices)\n` +
+        `- 31-60 days overdue: $${Number(s.total_31_60 ?? 0).toLocaleString()} (${s.pct_31_60 ?? 0}%, ${s.total_bucket_31_60_count ?? "N/A"} invoices)\n` +
+        `- 61-90 days overdue: $${Number(s.total_61_90 ?? 0).toLocaleString()} (${s.pct_61_90 ?? 0}%, ${s.total_bucket_61_90_count ?? "N/A"} invoices)\n` +
+        `- 90+ days overdue: $${Number(s.total_over_90 ?? 0).toLocaleString()} (${s.pct_over_90 ?? 0}%, ${s.total_bucket_over_90_count ?? "N/A"} invoices)\n` +
         `- Pre-petition (bankruptcy, frozen): $${Number(s.total_pre_petition ?? 0).toLocaleString()}\n` +
         `- Total outstanding: $${Number(s.total_outstanding ?? 0).toLocaleString()}\n` +
         `- Customers with outstanding AR: ${s.customer_count ?? "N/A"}\n` +

@@ -1144,7 +1144,12 @@ SELECT
   ROUND(SUM(bucket_31_60) / NULLIF(SUM(total_outstanding), 0::numeric) * 100::numeric, 1) AS pct_31_60,
   ROUND(SUM(bucket_61_90) / NULLIF(SUM(total_outstanding), 0::numeric) * 100::numeric, 1) AS pct_61_90,
   ROUND(SUM(bucket_over_90) / NULLIF(SUM(total_outstanding), 0::numeric) * 100::numeric, 1) AS pct_over_90,
-  CURRENT_DATE AS snapshot_date
+  CURRENT_DATE AS snapshot_date,
+  SUM(current_count) AS total_current_count,
+  SUM(bucket_1_30_count) AS total_bucket_1_30_count,
+  SUM(bucket_31_60_count) AS total_bucket_31_60_count,
+  SUM(bucket_61_90_count) AS total_bucket_61_90_count,
+  SUM(bucket_over_90_count) AS total_bucket_over_90_count
 FROM v_ar_aging_current;
 
 
