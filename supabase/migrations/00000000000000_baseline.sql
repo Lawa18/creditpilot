@@ -1322,6 +1322,26 @@ CREATE VIEW public.v_payment_behaviour AS
 
 
 --
+-- Name: v_payment_behaviour_portfolio; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE VIEW public.v_payment_behaviour_portfolio AS
+ SELECT count(DISTINCT customer_id) AS customer_count,
+    count(*) AS total_payments,
+    COALESCE(sum(amount_paid), (0)::numeric) AS total_paid_all_time,
+    COALESCE(sum(amount_paid) FILTER (WHERE (payment_date >= (CURRENT_DATE - '1 year'::interval))), (0)::numeric) AS total_paid_12mo,
+    round(avg(days_to_pay), 1) AS avg_days_to_pay,
+    round(avg(days_early_late), 1) AS avg_days_early_late,
+    round((avg(
+        CASE
+            WHEN on_time THEN 1.0
+            ELSE 0.0
+        END) * (100)::numeric), 1) AS on_time_payment_pct,
+    max(payment_date) AS last_payment_date
+   FROM public.payment_transactions;
+
+
+--
 -- Name: v_portfolio_overview; Type: VIEW; Schema: public; Owner: -
 --
 
