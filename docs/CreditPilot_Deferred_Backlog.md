@@ -1111,3 +1111,14 @@ Also confirmed during this audit: negative_news, sec_filings, invoices, and paym
 **Incident during this work:** an `env | grep` command printed a live DATABASE_URL, including its password, into the session transcript. Founder rotated the credential immediately; connection reconfirmed working afterward. Added a standing CLAUDE.md rule (commit 9c0754d) against printing credential values in any future session.
 
 Harness 8/8 maintained throughout.
+
+---
+
+## Closing the old "Phase 1d follow-up" audit gap list (2026-09-05)
+
+The B0 Rebuild Plan's views audit originally flagged 6 items as needing follow-up verification "before declaring B0 done": bankruptcy_details table, growth_signals table, sec_monitoring table, invoices.claimable, invoices.next_dunning_date, payment_transactions.days_to_pay. Checked today whether all had actually been closed -- three had clear prior resolution already in this doc (sec_monitoring: extensively worked, closed with a systematic orphaned-row sweep; invoices.next_dunning_date: confirmed dropped cleanly; bankruptcy_details/growth_signals: confirmed dead code+schema). The remaining two had no explicit closure recorded anywhere -- verified directly rather than assumed:
+
+- **invoices.claimable** -- only referenced by v_bankruptcy_claims (as claimable_invoice_count/claimable_total), the same view already confirmed dead/unused above. Falls into the same bucket -- confirmed dead, safe, logged for the same future schema-hygiene pass, not urgent.
+- **payment_transactions.days_to_pay** -- confirmed genuinely live and actively used: read by ar-aging-agent, the analyse-payment-behaviour skill, cited directly in cia-agent's PAYMENT TRANSACTIONS TABLE context and payment-behavior sections, and displayed in the frontend (CustomerDetail.tsx). Never actually a gap -- just missing an explicit "confirmed fine" note.
+
+All 6 items from that original list are now genuinely accounted for. This closes out the last open item from the B0 views audit.
